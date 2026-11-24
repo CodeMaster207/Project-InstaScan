@@ -151,6 +151,9 @@ npm run dev              # http://localhost:5173
 ### Android app: `app/`
 A Jetpack Compose UI skeleton from the same wireframes (sign-in, drawer, scan form, warranty list, in-memory data). Open the folder in Android Studio and run the `app` configuration. It is parked while the web version is finished.
 
+## License
+Released under the [Apache License 2.0](LICENSE).
+
 ## Credits
 - Web app logo: the pixel-art image at `web/public/logo.png`.
 - Web UI icons (menu, camera, bell and so on) and the Android launcher icon: [Google Material Icons](https://github.com/google/material-design-icons), licensed under Apache 2.0.
