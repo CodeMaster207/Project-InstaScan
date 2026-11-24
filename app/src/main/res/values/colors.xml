@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Palette from Draft Img/Colour Scheme.png -->
+    <color name="blush">#F5E6E8</color>
+    <color name="lavender">#D5C6E0</color>
+    <color name="periwinkle">#AAA1C8</color>
+    <color name="mauve">#967AA1</color>
+    <color name="navy">#192A51</color>
+</resources>

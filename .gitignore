@@ -1,0 +1,20 @@
+# Gradle / build output
+.gradle/
+build/
+*.apk
+*.aab
+
+# Local config (machine-specific, may contain paths)
+local.properties
+
+# Firebase config: add it locally, do not commit
+google-services.json
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

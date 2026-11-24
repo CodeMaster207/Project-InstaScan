@@ -69,10 +69,10 @@ Built for the #BuildHybridAI Hackathon 2026.
 - Warranty estimates are suggestions, not guarantees. Always confirm with the seller or manufacturer.
 
 ## Tech
-- Android (Kotlin, Jetpack Compose)
+- Web: Vite, React, TypeScript, hosted on Firebase Hosting
 - Firebase AI Logic hybrid inference (on-device model with cloud fallback)
-- Local storage with Room
-- Local notifications for reminders
+- Browser local storage and the Notifications API for reminders
+- Android (Kotlin, Jetpack Compose): UI skeleton, to be ported after the web version
 
 ## Design
 
@@ -127,4 +127,31 @@ Draft wireframes live in [Draft Img](Draft%20Img/). They show the planned full a
 - [App Idea.md](App%20Idea.md): build order, scope and cut list
 
 ## Getting started
-Setup instructions will be added once the project is scaffolded.
+
+### Web app (current focus): `web/`
+Built with Vite, React and TypeScript. It runs in the browser and can be hosted on Firebase Hosting.
+
+```
+cd web
+npm install
+cp .env.example .env     # then fill in your Firebase web app keys
+npm run dev              # http://localhost:5173
+```
+
+- **Without Firebase keys** the app still works in Manual mode. Auto (AI) is switched off with a notice.
+- **With keys**, enable Firebase AI Logic in the Firebase console (Gemini Developer API) and use the Web SDK v13+.
+- **On-device AI** runs only in **desktop Chrome 139+**. Turn on `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input`, restart Chrome, and the first scan downloads the model (this can take several minutes). Other browsers use the cloud, and the badge says so.
+- **Deploy:** `npm run build`, then `firebase deploy --only hosting` from `web/` (run `firebase init hosting` once and choose `dist` as the public folder).
+- **App Check:** Firebase AI Logic may require App Check. For local testing use the debug provider as described in the Firebase docs, and never commit the debug token.
+
+**What works now:** sign-in screen (registration is a stub), navigation drawer, camera or photo upload, AI extraction with on-device first and cloud fallback, a verify-and-edit form, the warranty list (active, inactive, pending) with countdowns, reminders (in-app banner and browser notifications while the app is open) and local storage.
+
+**Not built yet:** real accounts, subscriptions, expenses and sync pages (they show "Coming soon"), and background reminders when the app is closed.
+
+### Android app: `app/`
+A Jetpack Compose UI skeleton from the same wireframes (sign-in, drawer, scan form, warranty list, in-memory data). Open the folder in Android Studio and run the `app` configuration. It is parked while the web version is finished.
+
+## Credits
+- Web app logo: the pixel-art image at `web/public/logo.png`.
+- Web UI icons (menu, camera, bell and so on) and the Android launcher icon: [Google Material Icons](https://github.com/google/material-design-icons), licensed under Apache 2.0.
+- Colour palette: see [Colour Scheme](Draft%20Img/Colour%20Scheme.png), with yellow accents added. Shape language borrowed from Project PaySense.
