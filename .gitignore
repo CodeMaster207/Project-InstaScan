@@ -10,6 +10,12 @@ local.properties
 # Firebase config: add it locally, do not commit
 google-services.json
 
+# Firebase CLI logs (they contain your account email and auth details)
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+*.log
+
 # IDE
 .idea/
 *.iml

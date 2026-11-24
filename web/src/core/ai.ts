@@ -137,7 +137,7 @@ async function run(model: ReturnType<typeof createModels>["preferDevice"], image
   ]);
   const text = result.response.text();
   // Dev only: shows what each path really returned, so the prompt and checks can be tuned.
-  if (import.meta.env.DEV) console.debug("[InstaPay] model answer:", text);
+  if (import.meta.env.DEV) console.debug("[InstaScan] model answer:", text);
   const source = String(result.response.inferenceSource ?? "").toUpperCase().includes("DEVICE")
     ? ("on-device" as const)
     : ("cloud" as const);

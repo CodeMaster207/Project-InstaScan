@@ -35,7 +35,7 @@ fun AppLogo(size: Dp = 96.dp, modifier: Modifier = Modifier) {
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_logo),
-            contentDescription = "InstaPay logo",
+            contentDescription = "InstaScan logo",
             tint = Blush,
             modifier = Modifier.size(size * 0.55f),
         )

@@ -100,7 +100,7 @@ fun InstaPayApp(vm: AppViewModel = viewModel()) {
                     }
                     Spacer(Modifier.height(24.dp))
                     Text(
-                        text = "InstaPay",
+                        text = "InstaScan",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         textDecoration = TextDecoration.Underline,

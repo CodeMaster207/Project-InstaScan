@@ -5,7 +5,7 @@ export function Brand({ size = 56, heading = false }: { size?: number; heading?:
     <div className="brand">
       <Logo size={size} />
       <Name className="brand-name" style={{ fontSize: `${size * 0.5}px` }}>
-        InstaPay
+        InstaScan
       </Name>
     </div>
   );
@@ -19,7 +19,7 @@ export function Logo({ size = 96 }: { size?: number }) {
       src={`${import.meta.env.BASE_URL}logo.png`}
       width={size}
       height={size}
-      alt="InstaPay logo"
+      alt="InstaScan logo"
     />
   );
 }

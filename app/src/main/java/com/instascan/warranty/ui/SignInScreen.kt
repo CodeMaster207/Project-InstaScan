@@ -31,7 +31,7 @@ fun SignInScreen(onRegister: () -> Unit, onUseOffline: () -> Unit) {
         AppLogo(size = 96.dp)
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "InstaPay",
+            text = "InstaScan",
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline,

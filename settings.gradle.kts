@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "InstaPay"
+rootProject.name = "InstaScan"
 include(":app")
