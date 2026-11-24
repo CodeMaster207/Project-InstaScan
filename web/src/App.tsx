@@ -5,19 +5,17 @@ import type { WarrantyItem } from "./core/types";
 import { Icon } from "./components/Icon";
 import { Brand } from "./components/Logo";
 import type { IconName } from "./components/icons";
-import { ComingSoonScreen } from "./screens/ComingSoonScreen";
 import { ScanScreen } from "./screens/ScanScreen";
 import { SignInScreen } from "./screens/SignInScreen";
 import { WarrantyScreen } from "./screens/WarrantyScreen";
 
-type Page = "scan" | "warranty" | "subscriptions" | "expenses" | "sync";
+type Page = "scan" | "warranty";
 
+// Subscriptions, Expenses and Sync appear in the wireframes but are not built yet,
+// so they are not offered in the menu.
 const NAV: { page: Page; label: string; icon: IconName }[] = [
   { page: "scan", label: "Scan Receipt", icon: "receipt" },
   { page: "warranty", label: "Warranty", icon: "verified_user" },
-  { page: "subscriptions", label: "Subscriptions Overview", icon: "subscriptions" },
-  { page: "expenses", label: "Expenses Overview", icon: "assessment" },
-  { page: "sync", label: "Sync Settings", icon: "sync" },
 ];
 
 export default function App() {
@@ -74,7 +72,7 @@ export default function App() {
   if (!session) {
     return (
       <div className="phone">
-        <SignInScreen onRegister={() => start("registered")} onUseOffline={() => start("offline")} />
+        <SignInScreen onStart={() => start("offline")} />
       </div>
     );
   }
@@ -95,7 +93,6 @@ export default function App() {
         {page === "warranty" && (
           <WarrantyScreen items={items} onRemove={removeItem} onActivate={activate} onToggleNotify={toggleNotify} />
         )}
-        {page !== "scan" && page !== "warranty" && <ComingSoonScreen title={current.label} />}
       </main>
 
       {menuOpen && <div className="scrim" onClick={() => setMenuOpen(false)} />}
@@ -120,8 +117,7 @@ export default function App() {
         </ul>
         <div className="drawer-footer">
           <strong>Account:</strong>
-          {/* TODO: show the signed-in email or username once registration exists. */}
-          <div className="account-box">{session === "offline" ? "Offline mode" : "Email / Username"}</div>
+          <div className="account-box">No account. Your receipts stay on this device.</div>
         </div>
       </nav>
     </div>

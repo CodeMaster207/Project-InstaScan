@@ -18,6 +18,47 @@ export function toISODate(date: Date): string {
   return `${date.getFullYear()}-${mm}-${dd}`;
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+function twoDigitYear(y: number): number {
+  return y < 100 ? 2000 + y : y;
+}
+
+function validISO(y: number, m: number, d: number): string | null {
+  const iso = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return parseISODate(iso) ? iso : null;
+}
+
+/**
+ * Turns the date formats seen on receipts into YYYY-MM-DD, or returns null.
+ * Numeric dates are read day first (03/10/26 is 3 October 2026), as on Malaysian and most
+ * non-US receipts. A time after the date ("03/10/26 11:08") is ignored.
+ * Handles: 2026-10-03, 03/10/26, 3-10-2026, 3.10.2026, 3 Oct 2026, 3 October 26, Oct 3, 2026.
+ */
+export function normalizeDate(raw: string): string | null {
+  const text = raw.trim().replace(/[T,]/g, " ").replace(/\s+/g, " ");
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})\b/.exec(text);
+  if (iso) return validISO(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const numeric = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})\b/.exec(text);
+  if (numeric) return validISO(twoDigitYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+
+  const dayFirst = /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]{3,9})\.? (\d{2}|\d{4})\b/i.exec(text);
+  if (dayFirst) {
+    const month = MONTHS.indexOf(dayFirst[2].slice(0, 3).toLowerCase()) + 1;
+    return month ? validISO(twoDigitYear(Number(dayFirst[3])), month, Number(dayFirst[1])) : null;
+  }
+
+  const monthFirst = /^([a-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)? (\d{2}|\d{4})\b/i.exec(text);
+  if (monthFirst) {
+    const month = MONTHS.indexOf(monthFirst[1].slice(0, 3).toLowerCase()) + 1;
+    return month ? validISO(twoDigitYear(Number(monthFirst[3])), month, Number(monthFirst[2])) : null;
+  }
+
+  return null;
+}
+
 /** Adds calendar months, clamping to the last day (31 Jan + 1 month = 28/29 Feb). */
 export function addMonths(iso: string, months: number): string {
   const start = parseISODate(iso);

@@ -1,23 +1,15 @@
 import { Brand } from "../components/Logo";
 
-interface Props {
-  onRegister: () => void;
-  onUseOffline: () => void;
-}
-
-/** Sign-in draft: register, or use the app offline (AI calling still works without an account). */
-export function SignInScreen({ onRegister, onUseOffline }: Props) {
+/** Welcome screen. There are no accounts yet: receipts are stored on this device only. */
+export function SignInScreen({ onStart }: { onStart: () => void }) {
   return (
     <main className="signin">
       <div className="signin-brand">
         <Brand size={80} heading />
       </div>
-      {/* TODO: real registration (Firebase Auth) comes later; this just continues for now. */}
-      <button className="btn btn-primary btn-block" onClick={onRegister}>
-        Register!
-      </button>
-      <button className="btn btn-outline btn-block" onClick={onUseOffline}>
-        Use it offline
+      <p className="muted signin-tagline">Scan a receipt. Never miss a warranty. Works offline.</p>
+      <button className="btn btn-primary btn-block" onClick={onStart}>
+        Get started
       </button>
     </main>
   );

@@ -1,5 +1,7 @@
 import { initializeApp } from "firebase/app";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from "firebase/ai";
+import { normalizeDate } from "./deadlines";
 import type { PreparedImage } from "./image";
 import type { AiResult, AiStage, ExtractedFields } from "./types";
 import { rejectReason } from "./validate";
@@ -21,7 +23,7 @@ export const isAiConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.pr
 const PROMPT = `You are reading a photo of a retail receipt. Return only JSON that matches the schema.
 - itemName: a short name for the main or most expensive item bought.
 - merchant: the store or seller name.
-- purchaseDate: the purchase date as YYYY-MM-DD.
+- purchaseDate: the purchase date as YYYY-MM-DD. Receipts usually print day/month/year (for example 03/10/26 is 3 October 2026, which you write as 2026-10-03). Ignore the time.
 - total: the final total paid, as a number without a currency symbol.
 - currency: the currency code (for example MYR, USD) or symbol.
 - warrantyMonths: ONLY if a warranty length is printed on the receipt (for example "1 year warranty" is 12). Otherwise leave it out. Never guess.
@@ -46,8 +48,33 @@ const CLOUD_MODEL = "gemini-3.5-flash-lite";
 
 let cachedModels: ReturnType<typeof createModels> | null = null;
 
+/**
+ * Firebase AI Logic requires App Check. Three ways to satisfy it:
+ * - Local dev (`npm run dev`): debug token is switched on automatically. The first run prints
+ *   a token in the browser console; register it in Firebase console > App Check > Apps >
+ *   Manage debug tokens.
+ * - Hosted build with a fixed debug token (the contest rules accept debug tokens): set
+ *   VITE_APPCHECK_DEBUG_TOKEN to a token registered in the console. It ends up in the public
+ *   JavaScript, so use a dedicated token and revoke it after judging.
+ * - Hosted build with reCAPTCHA Enterprise: set VITE_RECAPTCHA_SITE_KEY.
+ */
+function setUpAppCheck(app: ReturnType<typeof initializeApp>) {
+  const debugScope = self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string };
+  const fixedDebugToken = env.VITE_APPCHECK_DEBUG_TOKEN as string | undefined;
+  if (fixedDebugToken) debugScope.FIREBASE_APPCHECK_DEBUG_TOKEN = fixedDebugToken;
+  else if (env.DEV) debugScope.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+
+  // In debug mode the provider is swapped for the debug one, so the site key is a placeholder.
+  const siteKey = (env.VITE_RECAPTCHA_SITE_KEY as string | undefined) || "debug-only-placeholder";
+  initializeAppCheck(app, {
+    provider: new ReCaptchaEnterpriseProvider(siteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
+
 function createModels() {
   const app = initializeApp(firebaseConfig);
+  setUpAppCheck(app); // must run before the first AI call
   const ai = getAI(app, { backend: new GoogleAIBackend() });
 
   const shared = {
@@ -91,7 +118,13 @@ export async function prepareDeviceModel(onProgress?: (fraction: number) => void
 function parseFields(text: string): Partial<ExtractedFields> | null {
   try {
     const value: unknown = JSON.parse(text);
-    return value && typeof value === "object" ? (value as Partial<ExtractedFields>) : null;
+    if (!value || typeof value !== "object") return null;
+    const fields = value as Partial<ExtractedFields>;
+    // Small models often copy the date as printed (03/10/26). Convert it instead of rejecting.
+    if (typeof fields.purchaseDate === "string") {
+      fields.purchaseDate = normalizeDate(fields.purchaseDate) ?? fields.purchaseDate;
+    }
+    return fields;
   } catch {
     return null;
   }
@@ -103,6 +136,8 @@ async function run(model: ReturnType<typeof createModels>["preferDevice"], image
     { type: "inlineData" as const, inlineData: { data: image.base64, mimeType: image.mimeType } },
   ]);
   const text = result.response.text();
+  // Dev only: shows what each path really returned, so the prompt and checks can be tuned.
+  if (import.meta.env.DEV) console.debug("[InstaPay] model answer:", text);
   const source = String(result.response.inferenceSource ?? "").toUpperCase().includes("DEVICE")
     ? ("on-device" as const)
     : ("cloud" as const);

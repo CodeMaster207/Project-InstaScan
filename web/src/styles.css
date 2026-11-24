@@ -11,13 +11,13 @@
   --mauve-deep: #5e4570;
   --danger: #8a1c3a;
 
-  /* Yellow accent (the banana tones from PaySense) to keep the purple from feeling bland.
-     Contrast: navy on banana 10.8 to 12.8:1, banana text on navy 10.8:1.
-     Yellow alone is too faint on blush (1.3:1), so it is always paired with navy text or a navy outline. */
-  --banana-100: #fff5bf;
-  --banana-200: #ffec8a;
-  --banana-300: #ffe135;
-  --banana-400: #f7cd0e;
+  /* Yellow accent to keep the purple from feeling bland.
+     Contrast: navy on these yellows 8.5 to 12.6:1, and yellow text on navy the same.
+     Yellow alone is too faint on blush (1.4:1), so it is always paired with navy text or a navy outline. */
+  --banana-100: #fff3b8;
+  --banana-200: #ffe97f;
+  --banana-300: #ffdc2e;
+  --banana-400: #f2c40a;
 
   /* Text contrast (WCAG): navy on blush 11.6:1, navy on lavender 8.7:1, blush on navy 11.6:1.
      Rule: text only ever sits on blush, lavender, white or navy. Never on mauve or periwinkle. */
@@ -188,7 +188,13 @@ select {
 }
 
 .signin-brand {
-  margin-bottom: 20px;
+  margin-bottom: 8px;
+}
+
+.signin-tagline {
+  margin: 0 0 20px;
+  text-align: center;
+  font-size: 1rem;
 }
 
 /* Pages */

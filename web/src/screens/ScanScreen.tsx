@@ -47,6 +47,8 @@ interface Meta {
   source: Source;
   reason?: string;
   note?: string;
+  /** The store on the receipt. Shown as information, not used as the warranty provider. */
+  seller?: string;
 }
 
 export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
@@ -94,18 +96,21 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
     const endDate =
       f.purchaseDate && f.warrantyMonths && f.warrantyMonths > 0 ? addMonths(f.purchaseDate, f.warrantyMonths) : "";
     const amount = f.total !== undefined ? `${f.currency ?? ""} ${f.total}`.trim() : "";
+    const seller = f.merchant?.trim() ?? "";
     setForm({
       ...EMPTY,
-      name: f.itemName?.trim() || f.merchant?.trim() || "",
+      name: f.itemName?.trim() || seller,
       amount,
-      provider: f.merchant?.trim() ?? "",
+      // The store is not necessarily the warranty provider. Only assume it when the receipt
+      // actually prints a warranty length; otherwise leave it for the user.
+      provider: endDate ? seller : "",
       endDate,
     });
     const notes: string[] = [];
     if (endDate) notes.push("Warranty end date was worked out from the length printed on the receipt.");
-    else notes.push("No warranty length was printed, so add the end date yourself if there is one.");
+    else notes.push("No warranty length was printed, so add the end date and who gives the warranty yourself.");
     if (result.warning) notes.push(result.warning);
-    setMeta({ source: result.source, reason: result.reason, note: notes.join(" ") });
+    setMeta({ source: result.source, reason: result.reason, note: notes.join(" "), seller: seller || undefined });
   }
 
   function handleAdd() {
@@ -187,6 +192,11 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
           {mode === "auto" && (
             <div className="source-row">
               <span>Read by</span> <PathBadge source={meta.source} reason={meta.reason} />
+              {meta.seller && (
+                <p className="muted">
+                  Seller on the receipt: <strong>{meta.seller}</strong>
+                </p>
+              )}
               {meta.reason && <p className="muted">{meta.reason}</p>}
               {meta.note && <p className="muted">{meta.note}</p>}
               <p className="muted">Check the details below before adding.</p>
