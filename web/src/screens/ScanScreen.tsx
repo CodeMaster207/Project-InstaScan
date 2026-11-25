@@ -1,41 +1,25 @@
 import { useState } from "react";
 import { extractReceipt, isAiConfigured, prepareDeviceModel } from "../core/ai";
-import { addMonths, parseISODate } from "../core/deadlines";
-import { prepareImage } from "../core/image";
-import type { AiResult, AiStage, Source, WarrantyItem } from "../core/types";
+import { normalizeCategory } from "../core/categories";
+import { addMonths, parseISODate, toISODate } from "../core/deadlines";
+import { prepareImage, type PreparedImage } from "../core/image";
+import { makeItem } from "../core/items";
+import { saveReceiptImage } from "../core/images";
+import { normalizeAmount } from "../core/money";
+import type { AiResult, AiStage, Item, Source } from "../core/types";
 import { PathBadge } from "../components/PathBadge";
+import {
+  applyForm,
+  emptyForm,
+  ItemForm,
+  validateForm,
+  type FormErrors,
+  type FormState,
+} from "../components/ItemForm";
 import { CameraView } from "./CameraView";
-
-const REMIND_OPTIONS = [1, 3, 7, 14, 30];
 
 type Mode = "auto" | "manual";
 type Step = "camera" | "processing" | "form";
-
-interface Form {
-  name: string;
-  amount: string;
-  endDate: string;
-  provider: string;
-  nextPayment: string;
-  discountPercent: string;
-  discountStart: string;
-  discountEnd: string;
-  remind: boolean;
-  remindDays: number;
-}
-
-const EMPTY: Form = {
-  name: "",
-  amount: "",
-  endDate: "",
-  provider: "",
-  nextPayment: "",
-  discountPercent: "",
-  discountStart: "",
-  discountEnd: "",
-  remind: false,
-  remindDays: 7,
-};
 
 const STAGE_TEXT: Record<AiStage, string> = {
   preparing: "Getting your device ready…",
@@ -51,25 +35,34 @@ interface Meta {
   seller?: string;
 }
 
-export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
+interface Props {
+  defaultCurrency: string;
+  onAdd: (item: Item) => void;
+}
+
+export function ScanScreen({ defaultCurrency, onAdd }: Props) {
   const [mode, setMode] = useState<Mode>(isAiConfigured ? "auto" : "manual");
   const [step, setStep] = useState<Step>("camera");
   const [stage, setStage] = useState<AiStage>("preparing");
   const [progress, setProgress] = useState<number | null>(null);
-  const [form, setForm] = useState<Form>(EMPTY);
+  const [form, setForm] = useState<FormState>(() => emptyForm());
   const [meta, setMeta] = useState<Meta>({ source: "manual" });
+  const [image, setImage] = useState<PreparedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [triedToAdd, setTriedToAdd] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
 
   const showForm = mode === "manual" || step === "form";
-  const nameMissing = form.name.trim() === "";
-  const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
-    if (next === "auto") setStep("camera");
-    else setMeta({ source: "manual" });
+    setErrors({});
+    if (next === "auto") {
+      setStep("camera");
+    } else {
+      setMeta({ source: "manual" });
+      setImage(null);
+    }
   }
 
   async function handleCapture(file: Blob) {
@@ -81,8 +74,9 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
       // Needs the click that triggered this capture; downloads the on-device model if absent.
       await prepareDeviceModel((fraction) => setProgress(fraction));
       setProgress(null);
-      const image = await prepareImage(file);
-      const result = await extractReceipt(image, setStage);
+      const prepared = await prepareImage(file);
+      const result = await extractReceipt(prepared, setStage);
+      setImage(prepared);
       applyResult(result);
       setStep("form");
     } catch (e) {
@@ -95,16 +89,21 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
     const f = result.fields;
     const endDate =
       f.purchaseDate && f.warrantyMonths && f.warrantyMonths > 0 ? addMonths(f.purchaseDate, f.warrantyMonths) : "";
-    const amount = f.total !== undefined ? `${f.currency ?? ""} ${f.total}`.trim() : "";
+    const amount =
+      f.total !== undefined ? (normalizeAmount(`${f.currency ?? ""} ${f.total}`.trim(), defaultCurrency) ?? "") : "";
     const seller = f.merchant?.trim() ?? "";
+    setErrors({});
     setForm({
-      ...EMPTY,
+      ...emptyForm(),
       name: f.itemName?.trim() || seller,
       amount,
+      purchaseDate: f.purchaseDate && parseISODate(f.purchaseDate) ? f.purchaseDate : toISODate(new Date()),
+      category: normalizeCategory(f.category),
+      isSubscription: f.isSubscription === true,
+      endDate,
       // The store is not necessarily the warranty provider. Only assume it when the receipt
       // actually prints a warranty length; otherwise leave it for the user.
       provider: endDate ? seller : "",
-      endDate,
     });
     const notes: string[] = [];
     if (endDate) notes.push("Warranty end date was worked out from the length printed on the receipt.");
@@ -113,28 +112,26 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
     setMeta({ source: result.source, reason: result.reason, note: notes.join(" "), seller: seller || undefined });
   }
 
-  function handleAdd() {
-    setTriedToAdd(true);
-    if (nameMissing) return;
-    const discountPeriod =
-      form.discountStart || form.discountEnd ? `${form.discountStart || "?"} to ${form.discountEnd || "?"}` : "";
-    onAdd({
-      id: crypto.randomUUID(),
+  async function handleAdd() {
+    const found = validateForm(form, defaultCurrency);
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
+
+    const base = makeItem({
       name: form.name.trim(),
-      amount: form.amount.trim(),
-      endDate: parseISODate(form.endDate) ? form.endDate : "",
-      provider: form.provider.trim(),
-      nextPayment: form.nextPayment,
-      discountPercent: form.discountPercent.trim(),
-      discountPeriod,
-      remindDays: form.remind ? form.remindDays : null,
-      activated: false,
-      notify: form.remind,
+      merchant: meta.seller ?? "",
       source: meta.source,
       sourceReason: meta.reason,
     });
-    setForm(EMPTY);
-    setTriedToAdd(false);
+    let item = applyForm(form, base, defaultCurrency);
+    if (image && mode === "auto") {
+      item = { ...item, hasReceiptImage: await saveReceiptImage(item.id, image.previewUrl) };
+    }
+
+    onAdd(item);
+    setForm(emptyForm());
+    setErrors({});
+    setImage(null);
     setMeta({ source: "manual" });
     if (mode === "auto") setStep("camera");
   }
@@ -182,13 +179,7 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
       )}
 
       {showForm && (
-        <form
-          className="form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAdd();
-          }}
-        >
+        <>
           {mode === "auto" && (
             <div className="source-row">
               <span>Read by</span> <PathBadge source={meta.source} reason={meta.reason} />
@@ -202,95 +193,14 @@ export function ScanScreen({ onAdd }: { onAdd: (item: WarrantyItem) => void }) {
               <p className="muted">Check the details below before adding.</p>
             </div>
           )}
-
-          <label className="field">
-            <span>Name</span>
-            <input
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="Expense name"
-              aria-invalid={triedToAdd && nameMissing}
-            />
-            {triedToAdd && nameMissing && <small className="error">Name is required</small>}
-          </label>
-
-          <label className="field">
-            <span>Amount</span>
-            <input value={form.amount} onChange={(e) => set("amount", e.target.value)} placeholder="Money" />
-          </label>
-
-          <fieldset>
-            <legend>Warranty details</legend>
-            <p className="muted">How long does it last</p>
-            <div className="row">
-              <label className="field">
-                <span>End date</span>
-                <input type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
-              </label>
-              <label className="field">
-                <span>By</span>
-                <input
-                  value={form.provider}
-                  onChange={(e) => set("provider", e.target.value)}
-                  placeholder="Seller / Manufacturer"
-                />
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Subscription details</legend>
-            <p className="muted">The next cycle will start at when</p>
-            <div className="row">
-              <label className="field">
-                <span>Next payment at</span>
-                <input type="date" value={form.nextPayment} onChange={(e) => set("nextPayment", e.target.value)} />
-              </label>
-              <label className="field">
-                <span>Any discount given</span>
-                <input
-                  inputMode="decimal"
-                  value={form.discountPercent}
-                  onChange={(e) => set("discountPercent", e.target.value)}
-                  placeholder="%"
-                />
-              </label>
-            </div>
-            <div className="row">
-              <label className="field">
-                <span>Discount valid from</span>
-                <input type="date" value={form.discountStart} onChange={(e) => set("discountStart", e.target.value)} />
-              </label>
-              <label className="field">
-                <span>Discount valid until</span>
-                <input type="date" value={form.discountEnd} onChange={(e) => set("discountEnd", e.target.value)} />
-              </label>
-            </div>
-          </fieldset>
-
-          <label className="check">
-            <input type="checkbox" checked={form.remind} onChange={(e) => set("remind", e.target.checked)} />
-            <strong>Remind me when</strong>
-          </label>
-          {form.remind && (
-            <label className="field">
-              <span>Before the end date</span>
-              <select value={form.remindDays} onChange={(e) => set("remindDays", Number(e.target.value))}>
-                {REMIND_OPTIONS.map((d) => (
-                  <option key={d} value={d}>
-                    {d} days
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <div className="form-actions">
-            <button type="submit" className="btn btn-primary">
-              Add!
-            </button>
-          </div>
-        </form>
+          <ItemForm
+            form={form}
+            onChange={setForm}
+            errors={errors}
+            onSubmit={() => void handleAdd()}
+            submitLabel="Add!"
+          />
+        </>
       )}
     </div>
   );

@@ -1,24 +1,13 @@
-import { initializeApp } from "firebase/app";
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from "firebase/ai";
+import { CATEGORIES } from "./categories";
 import { normalizeDate } from "./deadlines";
+import { getFirebaseApp, isFirebaseConfigured } from "./firebase";
 import type { PreparedImage } from "./image";
 import type { AiResult, AiStage, ExtractedFields } from "./types";
 import { rejectReason } from "./validate";
 
-const env = import.meta.env;
-
-const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: env.VITE_FIREBASE_APP_ID,
-};
-
 /** False until the Firebase keys are put in web/.env. The app then falls back to Manual entry. */
-export const isAiConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+export const isAiConfigured = isFirebaseConfigured;
 
 const PROMPT = `You are reading a photo of a retail receipt. Return only JSON that matches the schema.
 - itemName: a short name for the main or most expensive item bought.
@@ -28,6 +17,8 @@ const PROMPT = `You are reading a photo of a retail receipt. Return only JSON th
 - currency: the currency code (for example MYR, USD) or symbol.
 - warrantyMonths: ONLY if a warranty length is printed on the receipt (for example "1 year warranty" is 12). Otherwise leave it out. Never guess.
 - policyText: any printed return or warranty policy text, copied as written. Leave it out if there is none.
+- category: exactly one of: ${CATEGORIES.join(", ")}.
+- isSubscription: true ONLY if the receipt is for a recurring subscription or membership (for example a gym, streaming or software plan). Leave it out otherwise.
 If a value is unreadable, leave optional fields out and do your best on the required ones.`;
 
 const receiptSchema = Schema.object({
@@ -39,8 +30,10 @@ const receiptSchema = Schema.object({
     currency: Schema.string(),
     warrantyMonths: Schema.number(),
     policyText: Schema.string(),
+    category: Schema.string(),
+    isSubscription: Schema.boolean(),
   },
-  optionalProperties: ["warrantyMonths", "policyText"],
+  optionalProperties: ["warrantyMonths", "policyText", "category", "isSubscription"],
 });
 
 /** The SDK's default cloud model for hybrid inference (Firebase AI Logic Web SDK v13+). */
@@ -48,34 +41,9 @@ const CLOUD_MODEL = "gemini-3.5-flash-lite";
 
 let cachedModels: ReturnType<typeof createModels> | null = null;
 
-/**
- * Firebase AI Logic requires App Check. Three ways to satisfy it:
- * - Local dev (`npm run dev`): debug token is switched on automatically. The first run prints
- *   a token in the browser console; register it in Firebase console > App Check > Apps >
- *   Manage debug tokens.
- * - Hosted build with a fixed debug token (the contest rules accept debug tokens): set
- *   VITE_APPCHECK_DEBUG_TOKEN to a token registered in the console. It ends up in the public
- *   JavaScript, so use a dedicated token and revoke it after judging.
- * - Hosted build with reCAPTCHA Enterprise: set VITE_RECAPTCHA_SITE_KEY.
- */
-function setUpAppCheck(app: ReturnType<typeof initializeApp>) {
-  const debugScope = self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string };
-  const fixedDebugToken = env.VITE_APPCHECK_DEBUG_TOKEN as string | undefined;
-  if (fixedDebugToken) debugScope.FIREBASE_APPCHECK_DEBUG_TOKEN = fixedDebugToken;
-  else if (env.DEV) debugScope.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-
-  // In debug mode the provider is swapped for the debug one, so the site key is a placeholder.
-  const siteKey = (env.VITE_RECAPTCHA_SITE_KEY as string | undefined) || "debug-only-placeholder";
-  initializeAppCheck(app, {
-    provider: new ReCaptchaEnterpriseProvider(siteKey),
-    isTokenAutoRefreshEnabled: true,
-  });
-}
-
 function createModels() {
-  const app = initializeApp(firebaseConfig);
-  setUpAppCheck(app); // must run before the first AI call
-  const ai = getAI(app, { backend: new GoogleAIBackend() });
+  // getFirebaseApp() sets up App Check first, which Firebase AI Logic requires.
+  const ai = getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
 
   const shared = {
     onDeviceParams: {

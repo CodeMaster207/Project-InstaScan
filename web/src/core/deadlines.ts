@@ -1,4 +1,4 @@
-import type { WarrantyItem, WarrantyStatus } from "./types";
+import type { Item, WarrantyStatus } from "./types";
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -82,18 +82,38 @@ export function daysLeft(endDate: string, today: Date = new Date()): number | nu
 }
 
 /** Pending until activated; then Active until the end date has passed. */
-export function statusOf(item: WarrantyItem, today: Date = new Date()): WarrantyStatus {
+export function statusOf(item: Pick<Item, "activated" | "endDate">, today: Date = new Date()): WarrantyStatus {
   if (!item.activated) return "pending";
   const left = daysLeft(item.endDate, today);
   if (left !== null && left < 0) return "inactive";
   return "active";
 }
 
-/** Active items with reminders on whose end date is within their reminder window. */
-export function dueSoon(items: WarrantyItem[], today: Date = new Date()): WarrantyItem[] {
-  return items.filter((item) => {
-    if (!item.notify || statusOf(item, today) !== "active") return false;
-    const left = daysLeft(item.endDate, today);
-    return left !== null && left <= (item.remindDays ?? 7);
-  });
+export interface Reminder {
+  item: Item;
+  kind: "warranty" | "subscription";
+  /** Days until the date. Negative for an overdue subscription payment. */
+  daysLeft: number;
+}
+
+/**
+ * Things to remind about: active warranties nearing their end date, and active subscriptions
+ * nearing (or past) their next payment. Only items with the bell on, inside their reminder window.
+ */
+export function dueReminders(items: Item[], today: Date = new Date()): Reminder[] {
+  const out: Reminder[] = [];
+  for (const item of items) {
+    if (!item.notify) continue;
+    const window = item.remindDays ?? 7;
+
+    if (item.endDate && statusOf(item, today) === "active") {
+      const left = daysLeft(item.endDate, today);
+      if (left !== null && left <= window) out.push({ item, kind: "warranty", daysLeft: left });
+    }
+    if (item.isSubscription && item.subscriptionActive && item.nextPayment) {
+      const left = daysLeft(item.nextPayment, today);
+      if (left !== null && left <= window) out.push({ item, kind: "subscription", daysLeft: left });
+    }
+  }
+  return out.sort((a, b) => a.daysLeft - b.daysLeft);
 }

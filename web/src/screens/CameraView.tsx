@@ -5,12 +5,16 @@ interface Props {
   onCapture: (image: Blob) => void;
 }
 
-/** Live camera with a capture button, plus an upload fallback (no camera, or permission denied). */
+/**
+ * Live camera with a capture button, plus an upload fallback (no camera, or permission denied).
+ * The controls can be tucked away with the arrow, as in the draft ("slide down to hide the button").
+ */
 export function CameraView({ onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(false);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -63,31 +67,44 @@ export function CameraView({ onCapture }: Props) {
       ) : (
         <video ref={videoRef} autoPlay playsInline muted className="camera-video" />
       )}
-      <div className="camera-actions">
-        <button
-          className="fab"
-          onClick={capture}
-          disabled={!ready}
-          aria-label="Scan receipt"
-          title="Scan receipt"
-        >
-          <Icon name="photo_camera" />
-        </button>
-        <button className="btn btn-outline" onClick={() => fileRef.current?.click()}>
-          <Icon name="photo_library" size={20} /> Upload photo
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onCapture(file);
-            e.target.value = "";
-          }}
-        />
-      </div>
+
+      <button
+        className="camera-toggle"
+        onClick={() => setControlsHidden((hidden) => !hidden)}
+        aria-expanded={!controlsHidden}
+        aria-label={controlsHidden ? "Show the scan buttons" : "Hide the scan buttons"}
+        title={controlsHidden ? "Show the scan buttons" : "Hide the scan buttons"}
+      >
+        <Icon name={controlsHidden ? "expand_less" : "expand_more"} />
+      </button>
+
+      {!controlsHidden && (
+        <div className="camera-actions">
+          <button
+            className="fab"
+            onClick={capture}
+            disabled={!ready}
+            aria-label="Scan receipt"
+            title="Scan receipt"
+          >
+            <Icon name="photo_camera" />
+          </button>
+          <button className="btn btn-outline" onClick={() => fileRef.current?.click()}>
+            <Icon name="photo_library" size={20} /> Upload photo
+          </button>
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onCapture(file);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }

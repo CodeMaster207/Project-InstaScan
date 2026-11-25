@@ -1,10 +1,13 @@
-import { daysLeft, dueSoon, statusOf } from "../core/deadlines";
-import type { WarrantyItem, WarrantyStatus } from "../core/types";
+import { daysLeft, dueReminders, statusOf } from "../core/deadlines";
+import { hasWarranty } from "../core/items";
+import type { Item, WarrantyStatus } from "../core/types";
 import { Icon } from "../components/Icon";
 import { PathBadge } from "../components/PathBadge";
 
 interface Props {
-  items: WarrantyItem[];
+  items: Item[];
+  onEdit: (id: string) => void;
+  /** Removes the warranty from the item. The expense (if any) stays. */
   onRemove: (id: string) => void;
   onActivate: (id: string) => void;
   onToggleNotify: (id: string) => void;
@@ -16,7 +19,7 @@ const SECTIONS: { status: WarrantyStatus; title: string; subtitle: string }[] = 
   { status: "pending", title: "Pending", subtitle: "require activation" },
 ];
 
-function countdown(item: WarrantyItem): string | null {
+function countdown(item: Item): string | null {
   const left = daysLeft(item.endDate);
   if (left === null) return null;
   if (left < 0) return `Expired ${-left} day${left === -1 ? "" : "s"} ago`;
@@ -25,19 +28,20 @@ function countdown(item: WarrantyItem): string | null {
 }
 
 /** Warranty page draft: Active (not expired), Inactive (expired), Pending (needs activation). */
-export function WarrantyScreen({ items, onRemove, onActivate, onToggleNotify }: Props) {
-  const due = dueSoon(items);
+export function WarrantyScreen({ items, onEdit, onRemove, onActivate, onToggleNotify }: Props) {
+  const warranties = items.filter(hasWarranty);
+  const due = dueReminders(warranties).filter((r) => r.kind === "warranty");
 
   return (
     <div className="page">
       {due.length > 0 && (
         <p className="notice" role="status">
-          Expiring soon: {due.map((i) => `${i.name} (${countdown(i)})`).join(", ")}
+          Expiring soon: {due.map((r) => `${r.item.name} (${countdown(r.item)})`).join(", ")}
         </p>
       )}
 
       {SECTIONS.map(({ status, title, subtitle }) => {
-        const list = items.filter((i) => statusOf(i) === status);
+        const list = warranties.filter((i) => statusOf(i) === status);
         return (
           <section key={status} className="section">
             <h2 className="section-title">
@@ -56,7 +60,12 @@ export function WarrantyScreen({ items, onRemove, onActivate, onToggleNotify }: 
                   .join(" · ");
                 return (
                   <li key={item.id} className="item">
-                    <button className="icon-btn" onClick={() => onRemove(item.id)} aria-label={`Remove ${item.name}`}>
+                    <button
+                      className="icon-btn"
+                      onClick={() => onRemove(item.id)}
+                      aria-label={`Remove the warranty for ${item.name}`}
+                      title="Remove warranty"
+                    >
                       <Icon name="close" />
                     </button>
                     <div className="item-main">
@@ -65,6 +74,14 @@ export function WarrantyScreen({ items, onRemove, onActivate, onToggleNotify }: 
                       {left && status !== "pending" && <span className="countdown">{left}</span>}
                       <PathBadge source={item.source} reason={item.sourceReason} />
                     </div>
+                    <button
+                      className="icon-btn"
+                      onClick={() => onEdit(item.id)}
+                      aria-label={`Edit ${item.name}`}
+                      title="Edit"
+                    >
+                      <Icon name="edit" />
+                    </button>
                     {status === "pending" ? (
                       <button
                         className="icon-btn"
