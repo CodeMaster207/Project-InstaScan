@@ -21,6 +21,15 @@ ui-debug.log
 *.iml
 .vscode/
 
+# Demo videos: far too big for git (GitHub rejects files over 100 MB). They go on YouTube.
+video/
+*.mp4
+*.mov
+
+# The video script is a private working document, not part of the project
+Demo Script.md
+Demo Script.docx
+
 # OS
 .DS_Store
 Thumbs.db
