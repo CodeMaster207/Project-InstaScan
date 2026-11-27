@@ -1,6 +1,7 @@
 import { migrateItem } from "./items";
 import type { Tombstones } from "./merge";
 import type { RateTable } from "./rates";
+import { resolveSettings } from "./settings";
 import type { Item, Settings } from "./types";
 
 // Key names keep the app's earlier working name so items saved before the rename are not lost.
@@ -10,10 +11,9 @@ const NOTIFIED_KEY = "instapay.notified";
 const SETTINGS_KEY = "instapay.settings";
 const DELETED_KEY = "instapay.deleted";
 const RATES_KEY = "instapay.rates";
+const OWNER_KEY = "instapay.owner";
 
 export type Session = "offline" | "account";
-
-export const DEFAULT_SETTINGS: Settings = { defaultCurrency: "RM", syncEnabled: false, autoConvert: true };
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -54,18 +54,19 @@ export function loadSession(): Session | null {
 export const saveSession = (session: Session): void => write(SESSION_KEY, session);
 export const clearSession = (): void => remove(SESSION_KEY);
 
-export function loadSettings(): Settings {
-  const raw = read<Partial<Settings>>(SETTINGS_KEY, {});
-  return {
-    defaultCurrency:
-      typeof raw.defaultCurrency === "string" && raw.defaultCurrency.trim()
-        ? raw.defaultCurrency.trim().toUpperCase().slice(0, 4)
-        : DEFAULT_SETTINGS.defaultCurrency,
-    syncEnabled: raw.syncEnabled === true,
-    autoConvert: raw.autoConvert !== false,
-  };
-}
+export const loadSettings = (): Settings => resolveSettings(read<unknown>(SETTINGS_KEY, {}));
 export const saveSettings = (settings: Settings): void => write(SETTINGS_KEY, settings);
+
+/**
+ * The account whose cloud copy the items on this device are synced with. It lets the app notice when a
+ * different person signs in on the same device, so one person's items are never quietly added to
+ * someone else's account.
+ */
+export function loadOwner(): string | null {
+  const value = read<unknown>(OWNER_KEY, null);
+  return typeof value === "string" && value !== "" ? value : null;
+}
+export const saveOwner = (uid: string): void => write(OWNER_KEY, uid);
 
 export function loadTombstones(): Tombstones {
   const raw = read<unknown>(DELETED_KEY, {});
@@ -100,4 +101,5 @@ export function clearLocalData(): void {
   remove(ITEMS_KEY);
   remove(DELETED_KEY);
   remove(NOTIFIED_KEY);
+  remove(OWNER_KEY); // nothing is left on this device, so it belongs to nobody
 }

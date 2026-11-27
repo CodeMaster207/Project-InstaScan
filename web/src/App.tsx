@@ -6,16 +6,19 @@ import { clearReceiptImages, deleteReceiptImage } from "./core/images";
 import { hasWarranty, isOrphan } from "./core/items";
 import { currencyKey } from "./core/money";
 import { fetchRates, isFresh, type Converter, type RateTable } from "./core/rates";
+import { isSyncOn } from "./core/settings";
 import {
   clearLocalData,
   clearSession,
   loadItems,
+  loadOwner,
   loadRates,
   loadSession,
   loadSettings,
   loadTombstones,
   markNotified,
   saveItems,
+  saveOwner,
   saveRates,
   saveSession,
   saveSettings,
@@ -26,6 +29,7 @@ import {
 import type { Item, Settings } from "./core/types";
 import { Icon } from "./components/Icon";
 import { Brand } from "./components/Logo";
+import { SyncPrompt } from "./components/SyncPrompt";
 import type { IconName } from "./components/icons";
 import { EditItemScreen } from "./screens/EditItemScreen";
 import { ExpensesScreen } from "./screens/ExpensesScreen";
@@ -65,6 +69,12 @@ export default function App() {
   const [editing, setEditing] = useState<{ id: string; back: NavPage } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sync, setSync] = useState<SyncStatus>({ state: "idle" });
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const [rates, setRates] = useState<RateTable | null>(loadRates);
   const [ratesStatus, setRatesStatus] = useState<RatesInfo["status"]>("idle");
 
@@ -137,14 +147,40 @@ export default function App() {
     }
   }, [items]);
 
-  // ---- Optional cloud sync (opt-in, signed-in only) ----
+  // ---- Cloud sync: opt-in, and it only runs for the account that opted in ----
   const latest = useRef({ items, tombstones });
   latest.current = { items, tombstones };
   const inFlight = useRef(false);
   const rerun = useRef(false);
+  const signedInUid = user?.uid ?? null;
+  const syncOn = isSyncOn(settings, signedInUid);
+
+  // The sync status belongs to one account, so start fresh when the signed-in person changes.
+  useEffect(() => setSync({ state: "idle" }), [signedInUid]);
+
+  // When someone turns sync on for a device that still holds a different account's items, they choose
+  // what happens to those items, so they are never quietly added to the wrong account.
+  const confirmedOwner = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !syncOn || confirmedOwner.current === user.uid) return;
+    confirmedOwner.current = user.uid;
+    const owner = loadOwner();
+    if (owner && owner !== user.uid && latest.current.items.length > 0) {
+      const addThem = window.confirm(
+        "This device still has items from a different account.\n\nOK: add them to the account you just signed in to.\nCancel: remove them from this device.",
+      );
+      if (!addThem) {
+        clearLocalData();
+        void clearReceiptImages();
+        setItems([]);
+        setTombstones({});
+      }
+    }
+    saveOwner(user.uid);
+  }, [user, syncOn]);
 
   const runSync = useCallback(async () => {
-    if (!user || !settings.syncEnabled) return;
+    if (!user || !syncOn) return;
     if (inFlight.current) {
       rerun.current = true;
       return;
@@ -170,13 +206,13 @@ export default function App() {
         setTimeout(() => void runSync(), SYNC_DELAY_MS);
       }
     }
-  }, [user, settings.syncEnabled]);
+  }, [user, syncOn]);
 
   useEffect(() => {
-    if (!user || !settings.syncEnabled) return;
+    if (!user || !syncOn) return;
     const timer = setTimeout(() => void runSync(), SYNC_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [items, tombstones, user, settings.syncEnabled, runSync]);
+  }, [items, tombstones, user, syncOn, runSync]);
 
   // Try again when the connection comes back.
   useEffect(() => {
@@ -251,6 +287,10 @@ export default function App() {
 
   // ---- Account and data ----
   async function signOut() {
+    // One last sync, so changes made in the final moments are not left only on this device.
+    if (user && syncOn) {
+      await Promise.race([runSync(), new Promise((resolve) => setTimeout(resolve, 4000))]);
+    }
     try {
       await signOutAccount();
     } catch {
@@ -258,7 +298,6 @@ export default function App() {
     }
     clearSession();
     setSession(null);
-    setSettings((s) => ({ ...s, syncEnabled: false }));
     goTo("scan");
   }
 
@@ -268,21 +307,37 @@ export default function App() {
     setMenuOpen(false);
   }
 
+  /** Turns sync on for the signed-in account, or off. Only that account is ever synced. */
+  function setSyncFor(on: boolean) {
+    if (!user) return;
+    setSettings((s) => ({ ...s, syncUid: on ? user.uid : null }));
+  }
+
+  /** The button in the bottom-right corner: it explains what sync does and turns it on only if the person agrees. */
+  function askToTurnOnSync() {
+    const agreed = window.confirm(
+      "Back up the details of your items (name, amount, dates, category) to your account?\n\nReceipt photos are never uploaded. You can switch this off at any time in Sync Settings.",
+    );
+    if (!agreed) return;
+    setSyncFor(true);
+    setToast("Sync is on. Your item details are now backed up to your account.");
+  }
+
   function deleteDeviceData() {
     clearLocalData();
     void clearReceiptImages();
     setItems([]);
     setTombstones({});
-    // Otherwise sync would simply download everything again.
-    setSettings((s) => ({ ...s, syncEnabled: false }));
+    // Otherwise sync would simply download everything again. This is the user's own choice.
+    setSettings((s) => ({ ...s, syncUid: null }));
   }
 
   async function deleteCloud() {
     if (!user) return;
     const { deleteCloudData } = await import("./core/sync");
     await deleteCloudData(user.uid);
-    // Otherwise sync would simply upload everything again.
-    setSettings((s) => ({ ...s, syncEnabled: false }));
+    // Otherwise sync would simply upload everything again. This is the user's own choice.
+    setSettings((s) => ({ ...s, syncUid: null }));
   }
 
   // ---- What to show ----
@@ -310,9 +365,11 @@ export default function App() {
 
   const editingItem = editing ? items.find((i) => i.id === editing.id) : undefined;
   const title = page === "edit" ? "Edit Item" : NAV.find((n) => n.page === page)!.label;
+  // The opt-in button shows whenever accounts exist and this person is not syncing (it is redundant on the Sync page).
+  const showSyncPrompt = isFirebaseConfigured && page !== "sync" && !syncOn;
 
   return (
-    <div className="phone">
+    <div className={showSyncPrompt ? "phone has-fab" : "phone"}>
       <header className="topbar">
         {page === "edit" ? (
           <button className="icon-btn" onClick={closeEdit} aria-label="Go back">
@@ -367,6 +424,8 @@ export default function App() {
             accountsAvailable={isFirebaseConfigured}
             settings={settings}
             onSettings={setSettings}
+            syncOn={syncOn}
+            onSetSync={setSyncFor}
             status={sync}
             itemCount={items.length}
             onSyncNow={() => void runSync()}
@@ -426,6 +485,15 @@ export default function App() {
           )}
         </div>
       </nav>
+
+      {showSyncPrompt && (
+        <SyncPrompt mode={user ? "enable" : "signin"} onClick={user ? askToTurnOnSync : goToWelcome} />
+      )}
+      {toast && (
+        <p className="toast" role="status">
+          {toast}
+        </p>
+      )}
     </div>
   );
 }

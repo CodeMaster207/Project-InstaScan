@@ -21,6 +21,7 @@ import {
   type Converter,
   type RateTable,
 } from "./rates";
+import { isSyncOn, resolveSettings } from "./settings";
 import { rejectReason } from "./validate";
 
 const NOW = new Date(2026, 10, 25); // 25 Nov 2026
@@ -444,5 +445,42 @@ describe('warranty panel', () => {
     const form = { ...emptyForm(NOW), name: 'Kettle', isExpense: false, endDate: '2027-01-01' };
     assert.equal(validateForm({ ...form, warrantyOpen: false }, 'RM').kind !== undefined, true);
     assert.equal(validateForm({ ...form, warrantyOpen: true }, 'RM').kind, undefined);
+  });
+});
+
+describe('sync is opt-in, per account', () => {
+  it('nobody is synced until they turn it on', () => {
+    assert.equal(resolveSettings(undefined).syncUid, null);
+    assert.equal(resolveSettings({}).syncUid, null);
+    assert.equal(resolveSettings(null).syncUid, null);
+    assert.equal(resolveSettings('garbage').syncUid, null);
+  });
+
+  it('remembers which account opted in', () => {
+    assert.equal(resolveSettings({ syncUid: 'alice' }).syncUid, 'alice');
+  });
+
+  it('drops values that cannot be an account, and old "sync on" flags that name no account', () => {
+    assert.equal(resolveSettings({ syncUid: '' }).syncUid, null);
+    assert.equal(resolveSettings({ syncUid: 42 }).syncUid, null);
+    assert.equal(resolveSettings({ syncUid: true }).syncUid, null);
+    assert.equal(resolveSettings({ syncEnabled: true }).syncUid, null); // the old device-wide flag: they opt in again
+  });
+
+  it('sync runs only for the account that opted in', () => {
+    const settings = { syncUid: 'alice' };
+    assert.equal(isSyncOn(settings, 'alice'), true);
+    assert.equal(isSyncOn(settings, 'bob'), false); // someone else on the same device has not agreed
+    assert.equal(isSyncOn(settings, null), false); // nobody signed in
+    assert.equal(isSyncOn({ syncUid: null }, 'alice'), false);
+    assert.equal(isSyncOn({ syncUid: null }, null), false);
+  });
+
+  it('keeps the other settings sensible', () => {
+    assert.equal(resolveSettings({ defaultCurrency: ' usd ' }).defaultCurrency, 'USD');
+    assert.equal(resolveSettings({ defaultCurrency: '' }).defaultCurrency, 'RM');
+    assert.equal(resolveSettings({ defaultCurrency: 'toolongcode' }).defaultCurrency, 'TOOL');
+    assert.equal(resolveSettings({}).autoConvert, true);
+    assert.equal(resolveSettings({ autoConvert: false }).autoConvert, false);
   });
 });

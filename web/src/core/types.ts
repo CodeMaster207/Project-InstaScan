@@ -88,8 +88,12 @@ export type AiStage = "preparing" | "device" | "cloud";
 export interface Settings {
   /** Used when an amount is typed without a currency. */
   defaultCurrency: string;
-  /** Opt-in: back up and sync items to the signed-in account. Off by default. */
-  syncEnabled: boolean;
+  /**
+   * Opt-in: the account (its uid) that chose to back up and sync its items, or null for nobody. Sync is
+   * off until a person turns it on, and it only ever runs for the account that did, so someone else
+   * signing in on the same device is never synced without agreeing themselves.
+   */
+  syncUid: string | null;
   /** Show totals in the default currency, converting other currencies at the latest ECB rate. */
   autoConvert: boolean;
 }

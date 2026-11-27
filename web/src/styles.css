@@ -1020,3 +1020,48 @@ legend {
     margin-bottom: 4px;
   }
 }
+
+/* The opt-in button in the bottom-right corner of the app column, and the short confirmation after it */
+.sync-fab {
+  position: fixed;
+  bottom: 16px;
+  right: max(16px, calc(50vw - 240px + 16px)); /* the app is at most 480px wide and centred */
+  z-index: 9;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: var(--border) solid var(--navy);
+  border-radius: 24px;
+  background: var(--banana-300);
+  color: var(--navy);
+  font-weight: 800;
+  box-shadow: 0 6px 16px rgba(25, 42, 81, 0.3);
+  cursor: pointer;
+}
+
+.sync-fab:hover {
+  background: var(--banana-200);
+}
+
+/* Leave room under the content so the button never hides the last controls on a page */
+.has-fab main {
+  padding-bottom: 88px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  right: max(16px, calc(50vw - 240px + 16px));
+  left: max(16px, calc(50vw - 240px + 16px));
+  z-index: 12;
+  margin: 0;
+  padding: 14px 16px;
+  border: var(--border) solid var(--navy);
+  border-radius: var(--radius-card);
+  background: var(--navy);
+  color: var(--banana-300);
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(25, 42, 81, 0.35);
+}

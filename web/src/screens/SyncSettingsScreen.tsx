@@ -21,6 +21,9 @@ interface Props {
   accountsAvailable: boolean;
   settings: Settings;
   onSettings: (next: Settings) => void;
+  /** True when the signed-in account has opted in to sync. */
+  syncOn: boolean;
+  onSetSync: (on: boolean) => void;
   status: SyncStatus;
   itemCount: number;
   onSyncNow: () => void;
@@ -38,6 +41,8 @@ export function SyncSettingsScreen({
   accountsAvailable,
   settings,
   onSettings,
+  syncOn,
+  onSetSync,
   status,
   itemCount,
   onSyncNow,
@@ -100,18 +105,19 @@ export function SyncSettingsScreen({
           <label className="check">
             <input
               type="checkbox"
-              checked={settings.syncEnabled && user !== null}
+              checked={syncOn}
               disabled={!user}
-              onChange={(e) => onSettings({ ...settings, syncEnabled: e.target.checked })}
+              onChange={(e) => onSetSync(e.target.checked)}
             />
             <strong>Sync my items to my account</strong>
           </label>
           <p className="muted">
-            Off by default. When on, the details of your items (name, amount, dates, category, notes) are stored in
-            your account so you can use them on another device. <strong>Receipt photos are never uploaded.</strong>{" "}
-            {!user && "Sign in to turn this on."}
+            Off until you turn it on. When on, the details of your items (name, amount, dates, category, notes) are
+            kept in your account so you can use them on another device. <strong>Receipt photos are never uploaded.</strong>{" "}
+            You can switch it off at any time.
+            {!user && " Sign in or register to turn this on."}
           </p>
-          {user && settings.syncEnabled && (
+          {user && syncOn && (
             <>
               <p role="status" className={status.state === "error" ? "error" : "muted"}>
                 {statusText}
