@@ -51,6 +51,8 @@ const NAV: { page: NavPage; label: string; icon: IconName }[] = [
 ];
 
 const SYNC_DELAY_MS = 1500;
+/** If the cloud has not answered by then, stop waiting and say so, instead of showing "Syncing…" forever. */
+const SYNC_TIMEOUT_MS = 20_000;
 
 function askForNotifications() {
   if (typeof Notification !== "undefined" && Notification.permission === "default") {
@@ -189,7 +191,11 @@ export default function App() {
     setSync((s) => ({ ...s, state: "syncing" }));
     try {
       const { syncItems } = await import("./core/sync");
-      const result = await syncItems(user.uid, latest.current.items, latest.current.tombstones);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(Object.assign(new Error("Sync timed out"), { code: "deadline-exceeded" })), SYNC_TIMEOUT_MS),
+      );
+      // A reply that arrives after the time limit is simply dropped. The next sync catches up.
+      const result = await Promise.race([syncItems(user.uid, latest.current.items, latest.current.tombstones), timeout]);
       // Only touch state when something really changed, so syncing settles instead of looping.
       if (result.localChanged) setItems(result.items);
       if (JSON.stringify(result.tombstones) !== JSON.stringify(latest.current.tombstones)) {
