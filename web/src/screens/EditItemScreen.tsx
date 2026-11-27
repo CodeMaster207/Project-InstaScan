@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { loadReceiptImage } from "../core/images";
+import { applyForm, formFromItem, validateForm, type FormErrors, type FormState } from "../core/form";
+import type { RateTable } from "../core/rates";
 import type { Item } from "../core/types";
-import { applyForm, formFromItem, ItemForm, validateForm, type FormErrors, type FormState } from "../components/ItemForm";
+import { ItemForm } from "../components/ItemForm";
 import { PathBadge } from "../components/PathBadge";
 
 interface Props {
   item: Item;
   defaultCurrency: string;
+  /** Exchange rates, so a foreign amount can be kept or converted before saving. */
+  rates: RateTable | null;
   onSave: (item: Item) => void;
   onDelete: (id: string) => void;
 }
@@ -14,7 +18,7 @@ interface Props {
 type Tab = "details" | "receipt";
 
 /** Edit page draft: change an item's details afterward, or view the scanned receipt. */
-export function EditItemScreen({ item, defaultCurrency, onSave, onDelete }: Props) {
+export function EditItemScreen({ item, defaultCurrency, rates, onSave, onDelete }: Props) {
   const [tab, setTab] = useState<Tab>("details");
   const [form, setForm] = useState<FormState>(() => formFromItem(item));
   const [errors, setErrors] = useState<FormErrors>({});
@@ -38,7 +42,7 @@ export function EditItemScreen({ item, defaultCurrency, onSave, onDelete }: Prop
     const found = validateForm(form, defaultCurrency);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
-    onSave(applyForm(form, item, defaultCurrency));
+    onSave(applyForm(form, item, defaultCurrency, rates));
   }
 
   return (
@@ -69,6 +73,13 @@ export function EditItemScreen({ item, defaultCurrency, onSave, onDelete }: Prop
             errors={errors}
             onSubmit={save}
             submitLabel="Save changes"
+            defaultCurrency={defaultCurrency}
+            rates={rates}
+            amountNote={
+              item.originalAmount && form.amount === item.amount
+                ? `Originally ${item.originalAmount}${item.rateDate ? `, converted at the ${item.rateDate} rate` : ""}.`
+                : null
+            }
             extraActions={
               <button
                 type="button"

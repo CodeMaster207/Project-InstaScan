@@ -4,15 +4,19 @@ import { dueReminders, toISODate } from "./core/deadlines";
 import { isFirebaseConfigured } from "./core/firebase";
 import { clearReceiptImages, deleteReceiptImage } from "./core/images";
 import { hasWarranty, isOrphan } from "./core/items";
+import { currencyKey } from "./core/money";
+import { fetchRates, isFresh, type Converter, type RateTable } from "./core/rates";
 import {
   clearLocalData,
   clearSession,
   loadItems,
+  loadRates,
   loadSession,
   loadSettings,
   loadTombstones,
   markNotified,
   saveItems,
+  saveRates,
   saveSession,
   saveSettings,
   saveTombstones,
@@ -28,7 +32,7 @@ import { ExpensesScreen } from "./screens/ExpensesScreen";
 import { ScanScreen } from "./screens/ScanScreen";
 import { SignInScreen } from "./screens/SignInScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
-import { SyncSettingsScreen, type SyncStatus } from "./screens/SyncSettingsScreen";
+import { SyncSettingsScreen, type RatesInfo, type SyncStatus } from "./screens/SyncSettingsScreen";
 import { WarrantyScreen } from "./screens/WarrantyScreen";
 
 type NavPage = "scan" | "warranty" | "subscriptions" | "expenses" | "sync";
@@ -61,6 +65,41 @@ export default function App() {
   const [editing, setEditing] = useState<{ id: string; back: NavPage } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sync, setSync] = useState<SyncStatus>({ state: "idle" });
+  const [rates, setRates] = useState<RateTable | null>(loadRates);
+  const [ratesStatus, setRatesStatus] = useState<RatesInfo["status"]>("idle");
+
+  const entered = user !== null || session === "offline";
+
+  // ---- Automatic currency conversion ----
+  const refreshRates = useCallback(async () => {
+    setRatesStatus("loading");
+    try {
+      const table = await fetchRates();
+      setRates(table);
+      saveRates(table);
+      setRatesStatus("idle");
+    } catch {
+      // Keep whatever rates are cached. Totals fall back to one line per currency if there are none.
+      setRatesStatus("error");
+    }
+  }, []);
+
+  // Download rates when the app opens (and when the connection returns) if the cached ones are old.
+  useEffect(() => {
+    if (!settings.autoConvert || !entered || isFresh(rates)) return;
+    void refreshRates();
+    // Only when the setting or the screen changes, so a failed download is not retried in a loop.
+  }, [settings.autoConvert, entered]);
+  useEffect(() => {
+    const retry = () => {
+      if (settings.autoConvert && !isFresh(rates)) void refreshRates();
+    };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [settings.autoConvert, rates, refreshRates]);
+
+  const converter: Converter | null =
+    settings.autoConvert && rates ? { base: currencyKey(settings.defaultCurrency), table: rates } : null;
 
   // Keep what is on screen and what is stored the same.
   useEffect(() => saveItems(items), [items]);
@@ -247,7 +286,6 @@ export default function App() {
   }
 
   // ---- What to show ----
-  const entered = user !== null || session === "offline";
   if (!authReady && session === "account") {
     return (
       <div className="phone">
@@ -289,7 +327,9 @@ export default function App() {
       </header>
 
       <main>
-        {page === "scan" && <ScanScreen defaultCurrency={settings.defaultCurrency} onAdd={addItem} />}
+        {page === "scan" && (
+          <ScanScreen defaultCurrency={settings.defaultCurrency} rates={rates} onAdd={addItem} />
+        )}
         {page === "warranty" && (
           <WarrantyScreen
             items={items}
@@ -302,6 +342,7 @@ export default function App() {
         {page === "subscriptions" && (
           <SubscriptionsScreen
             items={items}
+            converter={converter}
             onEdit={openEdit}
             onNotSubscription={(id) =>
               dropRole(id, { isSubscription: false, nextPayment: "", subscriptionActive: true })
@@ -310,10 +351,18 @@ export default function App() {
           />
         )}
         {page === "expenses" && (
-          <ExpensesScreen items={items} onEdit={openEdit} onNotExpense={(id) => dropRole(id, { isExpense: false })} />
+          <ExpensesScreen
+            items={items}
+            converter={converter}
+            ratesMissing={settings.autoConvert && rates === null}
+            onEdit={openEdit}
+            onNotExpense={(id) => dropRole(id, { isExpense: false })}
+          />
         )}
         {page === "sync" && (
           <SyncSettingsScreen
+            rates={{ status: ratesStatus, date: rates?.date ?? null }}
+            onRefreshRates={() => void refreshRates()}
             user={user}
             accountsAvailable={isFirebaseConfigured}
             settings={settings}
@@ -333,6 +382,7 @@ export default function App() {
               key={editingItem.id}
               item={editingItem}
               defaultCurrency={settings.defaultCurrency}
+              rates={rates}
               onSave={saveEdit}
               onDelete={removeEdited}
             />

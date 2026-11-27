@@ -1,11 +1,14 @@
 import { downloadText, toCSV } from "../core/csv";
 import { daysLeft, dueReminders, toISODate } from "../core/deadlines";
 import { formatMoney, itemMoney, sumByCurrency } from "../core/money";
+import { approxText, totalIn, type Converter } from "../core/rates";
 import type { Item } from "../core/types";
 import { Icon } from "../components/Icon";
 
 interface Props {
   items: Item[];
+  /** Converts amounts into the default currency. Null when conversion is off or rates are missing. */
+  converter: Converter | null;
   onEdit: (id: string) => void;
   /** Takes the item out of the subscriptions (it stays if it is also an expense or a warranty). */
   onNotSubscription: (id: string) => void;
@@ -21,12 +24,14 @@ function dueText(item: Item): string {
 }
 
 /** Subscriptions page draft: Active (charged next cycle) and Inactive (not charged next cycle). */
-export function SubscriptionsScreen({ items, onEdit, onNotSubscription, onSetActive }: Props) {
+export function SubscriptionsScreen({ items, converter, onEdit, onNotSubscription, onSetActive }: Props) {
   const subs = items.filter((i) => i.isSubscription);
   const active = subs.filter((i) => i.subscriptionActive);
   const inactive = subs.filter((i) => !i.subscriptionActive);
   const due = dueReminders(subs).filter((r) => r.kind === "subscription");
-  const nextCycle = sumByCurrency(active);
+  // One total in the default currency when conversion is on, otherwise one per currency.
+  const converted = converter ? totalIn(active, converter) : null;
+  const nextCycle = converter ? [] : sumByCurrency(active);
 
   function exportCSV() {
     const rows = subs.map((item) => {
@@ -68,7 +73,11 @@ export function SubscriptionsScreen({ items, onEdit, onNotSubscription, onSetAct
                 </span>
               )}
             </div>
-            <span className="amount">{item.amount}</span>
+            <span className="amount">
+              {item.amount}
+              {approxText(item, converter) && <small className="approx">{approxText(item, converter)}</small>}
+              {item.originalAmount && <small className="approx">was {item.originalAmount}</small>}
+            </span>
             <button className="icon-btn" onClick={() => onEdit(item.id)} aria-label={`Edit ${item.name}`} title="Edit">
               <Icon name="edit" />
             </button>
@@ -99,6 +108,21 @@ export function SubscriptionsScreen({ items, onEdit, onNotSubscription, onSetAct
           <u>Active Subscriptions</u>: Need to pay subscription fees next cycle
         </h2>
         {renderList(active, true)}
+        {converter && converted && converted.counted > 0 && (
+          <div className="total">
+            <u>Due next cycle:</u> <span className="total-line">{formatMoney(converted.total, converter.base)}</span>
+            {converted.converted > 0 && (
+              <p className="muted conversion-note">
+                Converted at the {converter.table.date} European Central Bank rate.
+              </p>
+            )}
+            {converted.skipped.length > 0 && (
+              <p className="muted conversion-note" role="status">
+                Not converted, so left out: {converted.skipped.map((i) => i.name).join(", ")}.
+              </p>
+            )}
+          </div>
+        )}
         {nextCycle.length > 0 && (
           <div className="total">
             <u>Due next cycle:</u>{" "}

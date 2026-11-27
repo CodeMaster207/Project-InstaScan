@@ -8,6 +8,19 @@ import { isOrphan, makeItem, migrateItem } from "./items";
 import { mergeItems, type RemoteDoc } from "./merge";
 import { formatMoney, normalizeAmount, parseAmount, sumByCurrency } from "./money";
 import { inPeriod, periodLabel } from "./periods";
+import { applyForm, emptyForm, formFromItem, validateForm } from "./form";
+import {
+  approxText,
+  canConvert,
+  convert,
+  convertAmountText,
+  convertibleCurrencies,
+  isFresh,
+  parseRates,
+  totalIn,
+  type Converter,
+  type RateTable,
+} from "./rates";
 import { rejectReason } from "./validate";
 
 const NOW = new Date(2026, 10, 25); // 25 Nov 2026
@@ -17,7 +30,10 @@ describe("money", () => {
     assert.deepEqual(parseAmount("RM 12.50"), { currency: "MYR", value: 12.5 });
     assert.deepEqual(parseAmount("RM12.50"), { currency: "MYR", value: 12.5 });
     assert.deepEqual(parseAmount("12.50 MYR"), { currency: "MYR", value: 12.5 });
-    assert.deepEqual(parseAmount("$9.99"), { currency: "$", value: 9.99 });
+    assert.deepEqual(parseAmount("$9.99"), { currency: "USD", value: 9.99 });
+    assert.deepEqual(parseAmount("S$20"), { currency: "SGD", value: 20 });
+    assert.deepEqual(parseAmount("€5.50"), { currency: "EUR", value: 5.5 });
+    assert.deepEqual(parseAmount("£3"), { currency: "GBP", value: 3 });
     assert.deepEqual(parseAmount("USD 1,234.50"), { currency: "USD", value: 1234.5 });
     assert.deepEqual(parseAmount("30", "RM"), { currency: "MYR", value: 30 });
   });
@@ -261,5 +277,172 @@ describe("sync merge", () => {
   it("reports deletions the cloud has not seen", () => {
     const result = mergeItems([], [], { q: 5 });
     assert.deepEqual(result.uploadDeletes, [{ id: "q", deletedAt: 5 }]);
+  });
+});
+
+describe('exchange rates', () => {
+  // Units per 1 EUR, as the rate service reports them.
+  const table: RateTable = { date: '2026-11-26', rates: { USD: 1.1, MYR: 4.5, GBP: 0.8 }, fetchedAt: 1_000 };
+  const toMYR: Converter = { base: 'MYR', table };
+  const close = (actual: number | null, expected: number) => {
+    assert.ok(actual !== null && Math.abs(actual - expected) < 1e-9, `expected ${expected}, got ${actual}`);
+  };
+
+  it('converts through the euro in both directions', () => {
+    close(convert(110, 'USD', 'EUR', table), 100);
+    close(convert(100, 'EUR', 'MYR', table), 450);
+    close(convert(100, 'USD', 'MYR', table), (100 / 1.1) * 4.5);
+    close(convert(450, 'MYR', 'USD', table), 110);
+    close(convert(7, 'MYR', 'MYR', table), 7);
+  });
+
+  it('returns null when a currency has no rate', () => {
+    assert.equal(convert(5, 'XYZ', 'MYR', table), null);
+    assert.equal(convert(5, 'MYR', 'XYZ', table), null);
+    assert.equal(convert(5, '', 'MYR', table), null);
+    assert.equal(canConvert('USD', 'MYR', table), true);
+    assert.equal(canConvert('XYZ', 'MYR', table), false);
+    assert.equal(canConvert('XYZ', 'XYZ', table), true); // same currency needs no rate
+  });
+
+  it('accepts a good service reply and rejects bad ones', () => {
+    const good = parseRates({ amount: 1, base: 'EUR', date: '2026-11-26', rates: { USD: 1.1, MYR: 4.5 } }, 42);
+    assert.deepEqual(good, { date: '2026-11-26', rates: { USD: 1.1, MYR: 4.5 }, fetchedAt: 42 });
+    assert.equal(parseRates(null), null);
+    assert.equal(parseRates('nope'), null);
+    assert.equal(parseRates({ rates: { USD: 1 } }), null);
+    assert.equal(parseRates({ date: 'yesterday', rates: { USD: 1 } }), null);
+    assert.equal(parseRates({ date: '2026-11-26', rates: {} }), null);
+    assert.equal(parseRates({ date: '2026-11-26' }), null);
+  });
+
+  it('drops individual rates that are not sane numbers', () => {
+    const table2 = parseRates({ date: '2026-11-26', rates: { USD: 1.1, BAD: -2, nan: 3, ZERO: 0, TXT: 'x', MYR: 4.5 } });
+    assert.deepEqual(Object.keys(table2?.rates ?? {}).sort(), ['MYR', 'USD']);
+  });
+
+  it('knows when cached rates are stale', () => {
+    assert.equal(isFresh(null, 5), false);
+    assert.equal(isFresh(table, 1_000 + 60_000), true);
+    assert.equal(isFresh(table, 1_000 + 13 * 60 * 60 * 1000), false);
+  });
+
+  it('adds items together in the base currency and reports what it left out', () => {
+    const result = totalIn(
+      [
+        { name: 'Local', amount: 'RM 100.00' },
+        { name: 'Foreign', amount: 'USD 11.00' },
+        { name: 'Unknown currency', amount: 'XYZ 5.00' },
+        { name: 'No amount', amount: '' },
+      ],
+      toMYR,
+    );
+    close(result.total, 100 + (11 / 1.1) * 4.5);
+    assert.equal(result.counted, 2);
+    assert.equal(result.converted, 1);
+    assert.deepEqual(result.skipped.map((i) => i.name), ['Unknown currency']);
+  });
+
+  it('describes a conversion for rows', () => {
+    assert.equal(approxText({ amount: 'USD 11.00' }, toMYR), '≈ RM 45.00');
+    assert.equal(approxText({ amount: 'RM 10.00' }, toMYR), null); // already in the base currency
+    assert.equal(approxText({ amount: 'USD 11.00' }, null), null);
+  });
+});
+
+describe('keep or convert after scanning', () => {
+  const table: RateTable = { date: '2026-11-26', rates: { USD: 1.1, MYR: 4.5, GBP: 0.8 }, fetchedAt: 1_000 };
+  const fresh = () => makeItem({ name: 'Headphones', updatedAt: 5 }, NOW);
+  const formFor = (amount: string, convertTo = '') => ({ ...emptyForm(NOW), name: 'Headphones', amount, convertTo });
+
+  it('lists every convertible currency, euro included, in order', () => {
+    assert.deepEqual(convertibleCurrencies(table), ['EUR', 'GBP', 'MYR', 'USD']);
+  });
+
+  it('converts typed or scanned text and remembers what it was', () => {
+    assert.deepEqual(convertAmountText('USD 55', 'RM', 'MYR', table), { amount: 'RM 225.00', original: 'USD 55.00' });
+    assert.deepEqual(convertAmountText('USD 11', 'RM', 'GBP', table), { amount: 'GBP 8.00', original: 'USD 11.00' });
+    assert.equal(convertAmountText('USD 11', 'RM', 'USD', table), null); // already in that currency
+    assert.equal(convertAmountText('XYZ 5', 'RM', 'MYR', table), null); // no rate
+    assert.equal(convertAmountText('lots', 'RM', 'MYR', table), null); // not an amount
+  });
+
+  it('keeps the amount as scanned when the user chooses to keep it', () => {
+    const item = applyForm(formFor('USD 25.00'), fresh(), 'RM', table, NOW);
+    assert.equal(item.amount, 'USD 25.00');
+    assert.equal(item.originalAmount, undefined);
+    assert.equal(item.rateDate, undefined);
+  });
+
+  it('saves the converted amount and keeps the original when the user converts', () => {
+    const item = applyForm(formFor('USD 25.00', 'MYR'), fresh(), 'RM', table, NOW);
+    assert.equal(item.amount, 'RM 102.27'); // 25 / 1.1 * 4.5
+    assert.equal(item.originalAmount, 'USD 25.00');
+    assert.equal(item.rateDate, '2026-11-26');
+  });
+
+  it('can convert into a currency that is not the default', () => {
+    const item = applyForm(formFor('USD 11.00', 'GBP'), fresh(), 'RM', table, NOW);
+    assert.equal(item.amount, 'GBP 8.00');
+    assert.equal(item.originalAmount, 'USD 11.00');
+  });
+
+  it('never converts without rates, or when the chosen currency is the same', () => {
+    const noRates = applyForm(formFor('USD 25.00', 'MYR'), fresh(), 'RM', null, NOW);
+    assert.equal(noRates.amount, 'USD 25.00');
+    assert.equal(noRates.originalAmount, undefined);
+    const same = applyForm(formFor('USD 25.00', 'USD'), fresh(), 'RM', table, NOW);
+    assert.equal(same.amount, 'USD 25.00');
+  });
+
+  it('keeps the conversion note when an item is saved again unchanged, and drops it when the amount changes', () => {
+    const converted = applyForm(formFor('USD 25.00', 'MYR'), fresh(), 'RM', table, NOW);
+    const untouched = applyForm(formFromItem(converted), converted, 'RM', table, NOW);
+    assert.equal(untouched.amount, 'RM 102.27');
+    assert.equal(untouched.originalAmount, 'USD 25.00');
+    assert.equal(untouched.rateDate, '2026-11-26');
+
+    const retyped = applyForm({ ...formFromItem(converted), amount: 'RM 120' }, converted, 'RM', table, NOW);
+    assert.equal(retyped.amount, 'RM 120.00');
+    assert.equal(retyped.originalAmount, undefined);
+    assert.equal(retyped.rateDate, undefined);
+  });
+
+  it('a stored conversion note survives storage and the cloud', () => {
+    const item = applyForm(formFor('USD 25.00', 'MYR'), fresh(), 'RM', table, NOW);
+    const back = migrateItem(JSON.parse(JSON.stringify(item)), NOW);
+    assert.equal(back?.originalAmount, 'USD 25.00');
+    assert.equal(back?.rateDate, '2026-11-26');
+  });
+});
+
+describe('warranty panel', () => {
+  const base = () => makeItem({ name: 'Kettle', updatedAt: 1 }, NOW);
+
+  it('starts hidden on a new form', () => {
+    assert.equal(emptyForm(NOW).warrantyOpen, false);
+  });
+
+  it('opens when an item has a warranty end date or a provider, and stays hidden otherwise', () => {
+    assert.equal(formFromItem(base()).warrantyOpen, false);
+    assert.equal(formFromItem({ ...base(), endDate: '2027-01-01' }).warrantyOpen, true);
+    assert.equal(formFromItem({ ...base(), provider: 'Maker' }).warrantyOpen, true);
+  });
+
+  it('saves the warranty only while the panel is open', () => {
+    const typed = { ...emptyForm(NOW), name: 'Kettle', endDate: '2027-01-01', provider: 'Maker' };
+    const open = applyForm({ ...typed, warrantyOpen: true }, base(), 'RM', null, NOW);
+    assert.equal(open.endDate, '2027-01-01');
+    assert.equal(open.provider, 'Maker');
+    // Hiding the panel means no warranty, even if something was typed in it before.
+    const hidden = applyForm({ ...typed, warrantyOpen: false }, base(), 'RM', null, NOW);
+    assert.equal(hidden.endDate, '');
+    assert.equal(hidden.provider, '');
+  });
+
+  it('a hidden panel does not count as a warranty when checking the item has somewhere to show', () => {
+    const form = { ...emptyForm(NOW), name: 'Kettle', isExpense: false, endDate: '2027-01-01' };
+    assert.equal(validateForm({ ...form, warrantyOpen: false }, 'RM').kind !== undefined, true);
+    assert.equal(validateForm({ ...form, warrantyOpen: true }, 'RM').kind, undefined);
   });
 });

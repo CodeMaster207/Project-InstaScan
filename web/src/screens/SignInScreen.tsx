@@ -42,11 +42,14 @@ export function SignInScreen({ onUseOffline }: Props) {
   async function forgot() {
     setMessage(null);
     if (!email.trim()) return setMessage({ kind: "error", text: "Type your email above first, then press this again." });
+    const sent = { kind: "info" as const, text: "If that email has an account, a reset link is on its way." };
     try {
       await sendPasswordReset(email);
-      setMessage({ kind: "info", text: "If that email has an account, a reset link is on its way." });
+      setMessage(sent);
     } catch (error) {
-      setMessage({ kind: "error", text: describeAuthError(error) });
+      // Never reveal whether an email has an account: an unknown address gets the same answer.
+      const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : "";
+      setMessage(code === "auth/user-not-found" ? sent : { kind: "error", text: describeAuthError(error) });
     }
   }
 

@@ -1,5 +1,6 @@
 import { migrateItem } from "./items";
 import type { Tombstones } from "./merge";
+import type { RateTable } from "./rates";
 import type { Item, Settings } from "./types";
 
 // Key names keep the app's earlier working name so items saved before the rename are not lost.
@@ -8,10 +9,11 @@ const SESSION_KEY = "instapay.session";
 const NOTIFIED_KEY = "instapay.notified";
 const SETTINGS_KEY = "instapay.settings";
 const DELETED_KEY = "instapay.deleted";
+const RATES_KEY = "instapay.rates";
 
 export type Session = "offline" | "account";
 
-export const DEFAULT_SETTINGS: Settings = { defaultCurrency: "RM", syncEnabled: false };
+export const DEFAULT_SETTINGS: Settings = { defaultCurrency: "RM", syncEnabled: false, autoConvert: true };
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -60,6 +62,7 @@ export function loadSettings(): Settings {
         ? raw.defaultCurrency.trim().toUpperCase().slice(0, 4)
         : DEFAULT_SETTINGS.defaultCurrency,
     syncEnabled: raw.syncEnabled === true,
+    autoConvert: raw.autoConvert !== false,
   };
 }
 export const saveSettings = (settings: Settings): void => write(SETTINGS_KEY, settings);
@@ -72,6 +75,14 @@ export function loadTombstones(): Tombstones {
   return out;
 }
 export const saveTombstones = (tombstones: Tombstones): void => write(DELETED_KEY, tombstones);
+
+/** The last exchange rates downloaded, so conversion also works offline. */
+export function loadRates(): RateTable | null {
+  const raw = read<Partial<RateTable> | null>(RATES_KEY, null);
+  if (!raw || typeof raw.date !== "string" || typeof raw.fetchedAt !== "number" || !raw.rates || typeof raw.rates !== "object") return null;
+  return { date: raw.date, fetchedAt: raw.fetchedAt, rates: raw.rates as Record<string, number> };
+}
+export const saveRates = (table: RateTable): void => write(RATES_KEY, table);
 
 /** Remembers which reminders were already shown today so they are not repeated. */
 export function wasNotifiedToday(key: string, today: string): boolean {

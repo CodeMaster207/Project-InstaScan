@@ -862,3 +862,161 @@ legend {
 .topbar h1 {
   font-size: clamp(1.25rem, 5.6vw, 1.75rem);
 }
+
+/* Converted amounts: the original stays on top, the conversion sits under it */
+.amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.approx {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.hint {
+  font-weight: 600;
+}
+
+.conversion-note {
+  margin: 2px 4px 0;
+}
+
+/* "This amount is in USD. What should be saved?" */
+.currency-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: var(--border) solid var(--navy);
+  border-radius: var(--radius-card);
+  background: var(--banana-100);
+}
+
+.currency-choice legend {
+  padding: 0 6px;
+  font-weight: 800;
+}
+
+.currency-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.radio input[type="radio"] {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--navy);
+}
+
+.radio select {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border: var(--border) solid var(--mauve-deep);
+  border-radius: var(--radius-field);
+  background: #fff;
+  font-weight: 600;
+}
+
+.currency-choice .hint {
+  margin: 0;
+}
+
+/* Date fields: the browser's own date input, with a visible button that opens its calendar */
+.date-field {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.date-field input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* Our button replaces the browser's small built-in calendar icon */
+.date-field input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.date-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  min-height: 48px;
+  border: var(--border) solid var(--mauve-deep);
+  border-radius: var(--radius-field);
+  background: #fff;
+  cursor: pointer;
+}
+
+.date-btn:hover {
+  background: var(--banana-100);
+}
+
+/* The warranty panel and its "Remove warranty" button */
+.warranty-panel {
+  position: relative;
+}
+
+.panel-remove {
+  position: absolute;
+  top: -8px;
+  right: 0;
+}
+
+.btn-small {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+}
+
+/* Layout: rows wrap instead of overflowing, and a date field never gets narrower than its text and buttons */
+.row {
+  flex-wrap: wrap;
+}
+
+.row > .field {
+  flex: 1 1 150px;
+}
+
+.date-field input {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 7.5em;
+}
+
+.date-btn {
+  width: 44px;
+}
+
+.field-date {
+  min-width: calc(7.5em + 50px);
+}
+
+.field-date-clearable {
+  min-width: calc(7.5em + 100px);
+}
+
+/* On small screens the "Remove warranty" button sits on its own line instead of over the heading */
+@media (max-width: 420px) {
+  .panel-remove {
+    position: static;
+    align-self: flex-end;
+    margin-bottom: 4px;
+  }
+}

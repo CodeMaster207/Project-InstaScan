@@ -2,6 +2,7 @@
   "name": "instascan-web",
   "private": true,
   "version": "0.1.0",
+  "description": "Scan a receipt and track warranties, expenses and subscriptions. Receipts are read privately on your device first, with cloud AI only when needed (Firebase AI Logic hybrid inference).",
   "type": "module",
   "scripts": {
     "dev": "vite",

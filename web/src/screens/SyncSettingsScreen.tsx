@@ -8,7 +8,15 @@ export interface SyncStatus {
   lastSynced?: number;
 }
 
+export interface RatesInfo {
+  status: "idle" | "loading" | "error";
+  /** Publication date of the rates in use, or null when none have been downloaded. */
+  date: string | null;
+}
+
 interface Props {
+  rates: RatesInfo;
+  onRefreshRates: () => void;
   user: AuthUser | null;
   accountsAvailable: boolean;
   settings: Settings;
@@ -24,6 +32,8 @@ interface Props {
 
 /** Sync settings draft: account, opt-in backup and sync, currency, and control over your data. */
 export function SyncSettingsScreen({
+  rates,
+  onRefreshRates,
   user,
   accountsAvailable,
   settings,
@@ -130,6 +140,35 @@ export function SyncSettingsScreen({
               placeholder="RM"
             />
           </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={settings.autoConvert}
+              onChange={(e) => onSettings({ ...settings, autoConvert: e.target.checked })}
+            />
+            <strong>Convert other currencies into this one automatically</strong>
+          </label>
+          <p className="muted">
+            Totals and charts are shown in your default currency. Other currencies are converted at the latest
+            European Central Bank rate (from frankfurter.dev). Only currency codes are sent to look up the rate,
+            never your amounts or items. Each item keeps its original amount.
+          </p>
+          {settings.autoConvert && (
+            <>
+              <p role="status" className={rates.status === "error" ? "error" : "muted"}>
+                {rates.status === "loading"
+                  ? "Updating exchange rates…"
+                  : rates.status === "error"
+                    ? "Could not update the exchange rates. " + (rates.date ? `Using the rates from ${rates.date}.` : "Totals show each currency separately for now.")
+                    : rates.date
+                      ? `Rates from ${rates.date}.`
+                      : "No exchange rates downloaded yet."}
+              </p>
+              <button className="btn btn-outline" onClick={onRefreshRates} disabled={rates.status === "loading"}>
+                Update exchange rates
+              </button>
+            </>
+          )}
         </div>
       </section>
 

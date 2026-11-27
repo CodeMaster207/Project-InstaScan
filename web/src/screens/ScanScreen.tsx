@@ -6,16 +6,11 @@ import { prepareImage, type PreparedImage } from "../core/image";
 import { makeItem } from "../core/items";
 import { saveReceiptImage } from "../core/images";
 import { normalizeAmount } from "../core/money";
+import { applyForm, emptyForm, validateForm, type FormErrors, type FormState } from "../core/form";
+import type { RateTable } from "../core/rates";
 import type { AiResult, AiStage, Item, Source } from "../core/types";
+import { ItemForm } from "../components/ItemForm";
 import { PathBadge } from "../components/PathBadge";
-import {
-  applyForm,
-  emptyForm,
-  ItemForm,
-  validateForm,
-  type FormErrors,
-  type FormState,
-} from "../components/ItemForm";
 import { CameraView } from "./CameraView";
 
 type Mode = "auto" | "manual";
@@ -37,10 +32,12 @@ interface Meta {
 
 interface Props {
   defaultCurrency: string;
+  /** Exchange rates, so a foreign amount can be kept or converted before saving. */
+  rates: RateTable | null;
   onAdd: (item: Item) => void;
 }
 
-export function ScanScreen({ defaultCurrency, onAdd }: Props) {
+export function ScanScreen({ defaultCurrency, rates, onAdd }: Props) {
   const [mode, setMode] = useState<Mode>(isAiConfigured ? "auto" : "manual");
   const [step, setStep] = useState<Step>("camera");
   const [stage, setStage] = useState<AiStage>("preparing");
@@ -100,6 +97,8 @@ export function ScanScreen({ defaultCurrency, onAdd }: Props) {
       purchaseDate: f.purchaseDate && parseISODate(f.purchaseDate) ? f.purchaseDate : toISODate(new Date()),
       category: normalizeCategory(f.category),
       isSubscription: f.isSubscription === true,
+      // Open the warranty panel only when the receipt actually printed a warranty.
+      warrantyOpen: endDate !== "",
       endDate,
       // The store is not necessarily the warranty provider. Only assume it when the receipt
       // actually prints a warranty length; otherwise leave it for the user.
@@ -123,7 +122,7 @@ export function ScanScreen({ defaultCurrency, onAdd }: Props) {
       source: meta.source,
       sourceReason: meta.reason,
     });
-    let item = applyForm(form, base, defaultCurrency);
+    let item = applyForm(form, base, defaultCurrency, rates);
     if (image && mode === "auto") {
       item = { ...item, hasReceiptImage: await saveReceiptImage(item.id, image.previewUrl) };
     }
@@ -199,6 +198,8 @@ export function ScanScreen({ defaultCurrency, onAdd }: Props) {
             errors={errors}
             onSubmit={() => void handleAdd()}
             submitLabel="Add!"
+            defaultCurrency={defaultCurrency}
+            rates={rates}
           />
         </>
       )}

@@ -39,6 +39,13 @@ function setUpAppCheck(app: FirebaseApp): void {
   });
 }
 
+/**
+ * Development only: talk to the local Firebase emulators (Auth on 9099, Firestore on 8080) instead of
+ * the real project, so sign-in and sync can be tested without touching any real data. It needs the dev
+ * server AND VITE_USE_EMULATORS=true, so a production build can never switch it on.
+ */
+export const useEmulators = import.meta.env.DEV && import.meta.env.VITE_USE_EMULATORS === "true";
+
 let app: FirebaseApp | null = null;
 
 /** One shared Firebase app. App Check is set up first, so AI, Auth and Firestore all send tokens. */
@@ -46,7 +53,8 @@ export function getFirebaseApp(): FirebaseApp {
   if (!isFirebaseConfigured) throw new Error("Firebase is not configured. Add your keys to web/.env.");
   if (!app) {
     app = initializeApp(firebaseConfig);
-    setUpAppCheck(app);
+    // The emulators do not check App Check, and the debug token would call the real service.
+    if (!useEmulators) setUpAppCheck(app);
   }
   return app;
 }

@@ -12,6 +12,13 @@ export interface Item {
   name: string;
   /** Canonical display text such as "RM 12.50". Parsed with parseAmount() when summing. */
   amount: string;
+  /**
+   * Set only when the user chose to convert the amount into another currency when saving
+   * (for example "USD 25.00" before it became "RM 102.27"). Kept so the original is never lost.
+   */
+  originalAmount?: string;
+  /** Publication date of the exchange rate used for that conversion (YYYY-MM-DD). */
+  rateDate?: string;
   /** Purchase date from the receipt (ISO YYYY-MM-DD), or "" when unknown. */
   purchaseDate: string;
   /** When the item was added (ISO YYYY-MM-DD). Used as the date when purchaseDate is empty. */
@@ -83,4 +90,6 @@ export interface Settings {
   defaultCurrency: string;
   /** Opt-in: back up and sync items to the signed-in account. Off by default. */
   syncEnabled: boolean;
+  /** Show totals in the default currency, converting other currencies at the latest ECB rate. */
+  autoConvert: boolean;
 }

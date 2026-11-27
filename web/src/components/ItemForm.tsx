@@ -1,114 +1,12 @@
 import type { ReactNode } from "react";
-import { CATEGORIES, normalizeCategory } from "../core/categories";
-import { parseISODate, toISODate } from "../core/deadlines";
-import { normalizeAmount } from "../core/money";
-import type { Item } from "../core/types";
+import { CATEGORIES } from "../core/categories";
+import type { FormErrors, FormState } from "../core/form";
+import type { RateTable } from "../core/rates";
+import { CurrencyChoice } from "./CurrencyChoice";
+import { DateField } from "./DateField";
+import { Icon } from "./Icon";
 
 export const REMIND_OPTIONS = [1, 3, 7, 14, 30];
-
-/** What the form edits. Dates are ISO (the date inputs produce that). */
-export interface FormState {
-  name: string;
-  amount: string;
-  purchaseDate: string;
-  category: string;
-  isExpense: boolean;
-  isSubscription: boolean;
-  endDate: string;
-  provider: string;
-  nextPayment: string;
-  discountPercent: string;
-  discountStart: string;
-  discountEnd: string;
-  remind: boolean;
-  remindDays: number;
-}
-
-export function emptyForm(now: Date = new Date()): FormState {
-  return {
-    name: "",
-    amount: "",
-    purchaseDate: toISODate(now),
-    category: "Other",
-    isExpense: true,
-    isSubscription: false,
-    endDate: "",
-    provider: "",
-    nextPayment: "",
-    discountPercent: "",
-    discountStart: "",
-    discountEnd: "",
-    remind: false,
-    remindDays: 7,
-  };
-}
-
-/** Discount periods are stored as "2026-01-01 to 2026-03-01" ("?" marks a missing end). */
-function splitPeriod(period: string): [string, string] {
-  const match = /^(\S*) to (\S*)$/.exec(period);
-  if (!match) return ["", ""];
-  return [match[1] === "?" ? "" : match[1], match[2] === "?" ? "" : match[2]];
-}
-
-export function formFromItem(item: Item): FormState {
-  const [discountStart, discountEnd] = splitPeriod(item.discountPeriod);
-  return {
-    name: item.name,
-    amount: item.amount,
-    purchaseDate: item.purchaseDate,
-    category: item.category,
-    isExpense: item.isExpense,
-    isSubscription: item.isSubscription,
-    endDate: item.endDate,
-    provider: item.provider,
-    nextPayment: item.nextPayment,
-    discountPercent: item.discountPercent,
-    discountStart,
-    discountEnd,
-    remind: item.notify,
-    remindDays: item.remindDays ?? 7,
-  };
-}
-
-export type FormErrors = Partial<Record<"name" | "amount" | "purchaseDate" | "kind", string>>;
-
-export function validateForm(form: FormState, defaultCurrency: string): FormErrors {
-  const errors: FormErrors = {};
-  if (form.name.trim() === "") errors.name = "Name is required";
-  if (form.amount.trim() !== "" && normalizeAmount(form.amount, defaultCurrency) === null) {
-    errors.amount = "Enter an amount like 12.50 or RM 12.50";
-  }
-  if (form.purchaseDate !== "" && !parseISODate(form.purchaseDate)) errors.purchaseDate = "Use a real date";
-  if (!form.isExpense && !form.isSubscription && form.endDate === "") {
-    errors.kind = "Tick Expense or Subscription, or add a warranty end date, so this item has somewhere to show.";
-  }
-  return errors;
-}
-
-/** Copies the form onto an item. `base` is the existing item, or a fresh one for a new scan. */
-export function applyForm(form: FormState, base: Item, defaultCurrency: string, now: Date = new Date()): Item {
-  const discountPeriod =
-    form.isSubscription && (form.discountStart || form.discountEnd)
-      ? `${form.discountStart || "?"} to ${form.discountEnd || "?"}`
-      : "";
-  return {
-    ...base,
-    name: form.name.trim(),
-    amount: normalizeAmount(form.amount, defaultCurrency) ?? base.amount,
-    purchaseDate: form.purchaseDate,
-    category: normalizeCategory(form.category),
-    isExpense: form.isExpense,
-    isSubscription: form.isSubscription,
-    endDate: form.endDate,
-    provider: form.provider.trim(),
-    nextPayment: form.isSubscription ? form.nextPayment : "",
-    discountPercent: form.isSubscription ? form.discountPercent.trim() : "",
-    discountPeriod,
-    notify: form.remind,
-    remindDays: form.remind ? form.remindDays : null,
-    updatedAt: now.getTime(),
-  };
-}
 
 interface Props {
   form: FormState;
@@ -116,12 +14,28 @@ interface Props {
   errors: FormErrors;
   onSubmit: () => void;
   submitLabel: string;
+  /** The user's default currency, for example "RM". */
+  defaultCurrency: string;
+  /** Exchange rates for the "keep or convert" choice. Null when none have been downloaded. */
+  rates: RateTable | null;
   /** Extra controls shown next to the submit button (for example Delete). */
   extraActions?: ReactNode;
+  /** A note under the Amount field, for example where a converted amount came from. */
+  amountNote?: string | null;
 }
 
 /** The details form from the design drafts, shared by the Scan and Edit pages. */
-export function ItemForm({ form, onChange, errors, onSubmit, submitLabel, extraActions }: Props) {
+export function ItemForm({
+  form,
+  onChange,
+  errors,
+  onSubmit,
+  submitLabel,
+  defaultCurrency,
+  rates,
+  extraActions,
+  amountNote,
+}: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => onChange({ ...form, [key]: value });
 
   return (
@@ -154,6 +68,7 @@ export function ItemForm({ form, onChange, errors, onSubmit, submitLabel, extraA
             aria-invalid={errors.amount !== undefined}
           />
           {errors.amount && <small className="error">{errors.amount}</small>}
+          {!errors.amount && amountNote && <small className="hint">{amountNote}</small>}
         </label>
         <div className="checks" role="group" aria-label="What this is">
           <label className="check">
@@ -176,17 +91,23 @@ export function ItemForm({ form, onChange, errors, onSubmit, submitLabel, extraA
         </small>
       )}
 
+      {!errors.amount && (
+        <CurrencyChoice
+          amountText={form.amount}
+          defaultCurrency={defaultCurrency}
+          rates={rates}
+          convertTo={form.convertTo}
+          onChange={(convertTo) => set("convertTo", convertTo)}
+        />
+      )}
+
       <div className="row">
-        <label className="field">
-          <span>Purchase date</span>
-          <input
-            type="date"
-            value={form.purchaseDate}
-            onChange={(e) => set("purchaseDate", e.target.value)}
-            aria-invalid={errors.purchaseDate !== undefined}
-          />
-          {errors.purchaseDate && <small className="error">{errors.purchaseDate}</small>}
-        </label>
+        <DateField
+          label="Purchase date"
+          value={form.purchaseDate}
+          onChange={(value) => set("purchaseDate", value)}
+          error={errors.purchaseDate}
+        />
         <label className="field">
           <span>Category</span>
           <select value={form.category} onChange={(e) => set("category", e.target.value)}>
@@ -199,34 +120,52 @@ export function ItemForm({ form, onChange, errors, onSubmit, submitLabel, extraA
         </label>
       </div>
 
-      <fieldset>
-        <legend>Warranty details</legend>
-        <p className="muted">How long does it last</p>
-        <div className="row">
-          <label className="field">
-            <span>End date</span>
-            <input type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
-          </label>
-          <label className="field">
-            <span>By</span>
-            <input
-              value={form.provider}
-              onChange={(e) => set("provider", e.target.value)}
-              placeholder="Seller / Manufacturer"
+      {form.warrantyOpen ? (
+        <fieldset className="warranty-panel">
+          <legend>Warranty details</legend>
+          <button
+            type="button"
+            className="btn btn-small btn-outline panel-remove"
+            onClick={() => onChange({ ...form, warrantyOpen: false, endDate: "", provider: "" })}
+            title="This item has no warranty"
+          >
+            <Icon name="close" size={18} /> Remove warranty
+          </button>
+          <p className="muted">How long does it last</p>
+          <div className="row">
+            <DateField
+              label="End date"
+              value={form.endDate}
+              onChange={(value) => set("endDate", value)}
+              clearable
             />
-          </label>
-        </div>
-      </fieldset>
+            <label className="field">
+              <span>By</span>
+              <input
+                value={form.provider}
+                onChange={(e) => set("provider", e.target.value)}
+                placeholder="Seller / Manufacturer"
+              />
+            </label>
+          </div>
+        </fieldset>
+      ) : (
+        <button type="button" className="btn btn-outline btn-block" onClick={() => set("warrantyOpen", true)}>
+          <Icon name="add" size={20} /> Add a warranty
+        </button>
+      )}
 
       {form.isSubscription && (
         <fieldset>
           <legend>Subscription details</legend>
           <p className="muted">The next cycle will start at when</p>
           <div className="row">
-            <label className="field">
-              <span>Next payment at</span>
-              <input type="date" value={form.nextPayment} onChange={(e) => set("nextPayment", e.target.value)} />
-            </label>
+            <DateField
+              label="Next payment at"
+              value={form.nextPayment}
+              onChange={(value) => set("nextPayment", value)}
+              clearable
+            />
             <label className="field">
               <span>Any discount given</span>
               <input
@@ -238,14 +177,18 @@ export function ItemForm({ form, onChange, errors, onSubmit, submitLabel, extraA
             </label>
           </div>
           <div className="row">
-            <label className="field">
-              <span>Discount valid from</span>
-              <input type="date" value={form.discountStart} onChange={(e) => set("discountStart", e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Discount valid until</span>
-              <input type="date" value={form.discountEnd} onChange={(e) => set("discountEnd", e.target.value)} />
-            </label>
+            <DateField
+              label="Discount valid from"
+              value={form.discountStart}
+              onChange={(value) => set("discountStart", value)}
+              clearable
+            />
+            <DateField
+              label="Discount valid until"
+              value={form.discountEnd}
+              onChange={(value) => set("discountEnd", value)}
+              clearable
+            />
           </div>
         </fieldset>
       )}

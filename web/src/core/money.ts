@@ -6,8 +6,24 @@ export interface Money {
   value: number;
 }
 
-/** Spellings treated as the same currency when grouping totals. */
-const ALIASES: Record<string, string> = { RM: "MYR" };
+/**
+ * Symbols and local spellings mapped to ISO codes, so they group and convert correctly.
+ * A bare "$" is read as US dollars (it could also be SGD, AUD and others: the user can retype it).
+ */
+const ALIASES: Record<string, string> = {
+  RM: "MYR",
+  "$": "USD",
+  "US$": "USD",
+  "S$": "SGD",
+  "A$": "AUD",
+  "C$": "CAD",
+  "HK$": "HKD",
+  "NZ$": "NZD",
+  "€": "EUR",
+  "£": "GBP",
+  "¥": "JPY",
+  RMB: "CNY",
+};
 
 export function currencyKey(raw: string): string {
   const key = raw.trim().toUpperCase().replace(/\.$/, "");

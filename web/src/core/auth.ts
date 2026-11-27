@@ -1,4 +1,5 @@
-import { getFirebaseApp, isFirebaseConfigured } from "./firebase";
+import type { Auth } from "firebase/auth";
+import { getFirebaseApp, isFirebaseConfigured, useEmulators } from "./firebase";
 
 /** Firebase Authentication is loaded on demand, so it adds nothing to the first page load. */
 export interface AuthUser {
@@ -7,6 +8,17 @@ export interface AuthUser {
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
+
+let authInstance: Auth | null = null;
+
+async function authKit() {
+  const m = await import("firebase/auth");
+  if (!authInstance) {
+    authInstance = m.getAuth(getFirebaseApp());
+    if (useEmulators) m.connectAuthEmulator(authInstance, "http://127.0.0.1:9099", { disableWarnings: true });
+  }
+  return { m, auth: authInstance };
+}
 
 /** Calls `onChange` with the signed-in user, or null. Returns a function that stops listening. */
 export function watchAuth(onChange: (user: AuthUser | null) => void): () => void {
@@ -18,11 +30,9 @@ export function watchAuth(onChange: (user: AuthUser | null) => void): () => void
   let cancelled = false;
   void (async () => {
     try {
-      const { getAuth, onAuthStateChanged } = await import("firebase/auth");
+      const { m, auth } = await authKit();
       if (cancelled) return;
-      stop = onAuthStateChanged(getAuth(getFirebaseApp()), (user) =>
-        onChange(user ? { uid: user.uid, email: user.email ?? "" } : null),
-      );
+      stop = m.onAuthStateChanged(auth, (user) => onChange(user ? { uid: user.uid, email: user.email ?? "" } : null));
     } catch {
       onChange(null);
     }
@@ -34,23 +44,23 @@ export function watchAuth(onChange: (user: AuthUser | null) => void): () => void
 }
 
 export async function registerAccount(email: string, password: string): Promise<void> {
-  const { getAuth, createUserWithEmailAndPassword } = await import("firebase/auth");
-  await createUserWithEmailAndPassword(getAuth(getFirebaseApp()), email.trim(), password);
+  const { m, auth } = await authKit();
+  await m.createUserWithEmailAndPassword(auth, email.trim(), password);
 }
 
 export async function signInAccount(email: string, password: string): Promise<void> {
-  const { getAuth, signInWithEmailAndPassword } = await import("firebase/auth");
-  await signInWithEmailAndPassword(getAuth(getFirebaseApp()), email.trim(), password);
+  const { m, auth } = await authKit();
+  await m.signInWithEmailAndPassword(auth, email.trim(), password);
 }
 
 export async function signOutAccount(): Promise<void> {
-  const { getAuth, signOut } = await import("firebase/auth");
-  await signOut(getAuth(getFirebaseApp()));
+  const { m, auth } = await authKit();
+  await m.signOut(auth);
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
-  const { getAuth, sendPasswordResetEmail } = await import("firebase/auth");
-  await sendPasswordResetEmail(getAuth(getFirebaseApp()), email.trim());
+  const { m, auth } = await authKit();
+  await m.sendPasswordResetEmail(auth, email.trim());
 }
 
 /** Plain-language text for the errors a person can actually fix. */

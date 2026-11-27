@@ -1,4 +1,4 @@
-import { getFirebaseApp } from "./firebase";
+import { getFirebaseApp, useEmulators } from "./firebase";
 import { migrateItem } from "./items";
 import { mergeItems, type MergeResult, type RemoteDoc, type Tombstones } from "./merge";
 import type { Item } from "./types";
@@ -11,9 +11,15 @@ import type { Item } from "./types";
 
 const BATCH_SIZE = 400; // Firestore allows 500 writes per batch.
 
+let emulatorConnected = false;
+
 async function open(uid: string) {
   const m = await import("firebase/firestore");
   const db = m.getFirestore(getFirebaseApp());
+  if (useEmulators && !emulatorConnected) {
+    m.connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    emulatorConnected = true;
+  }
   return { m, db, items: m.collection(db, "users", uid, "items") };
 }
 
