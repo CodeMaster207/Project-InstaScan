@@ -6,12 +6,21 @@ import { clearReceiptImages, deleteReceiptImage } from "./core/images";
 import { hasWarranty, isOrphan } from "./core/items";
 import { currencyKey } from "./core/money";
 import { fetchRates, isFresh, type Converter, type RateTable } from "./core/rates";
+import {
+  deleteQuestion,
+  deleteReachesBackup,
+  describeDiscovery,
+  findNewItems,
+  type Discovery,
+} from "./core/policy";
 import { isSyncOn } from "./core/settings";
 import {
   clearLocalData,
   clearSession,
   loadItems,
   loadOwner,
+  loadPromptHidden,
+  savePromptHidden,
   loadRates,
   loadSession,
   loadSettings,
@@ -29,6 +38,7 @@ import {
 import type { Item, Settings } from "./core/types";
 import { Icon } from "./components/Icon";
 import { Brand } from "./components/Logo";
+import { DiscoveryDialog } from "./components/DiscoveryDialog";
 import { SyncPrompt } from "./components/SyncPrompt";
 import type { IconName } from "./components/icons";
 import { EditItemScreen } from "./screens/EditItemScreen";
@@ -72,6 +82,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sync, setSync] = useState<SyncStatus>({ state: "idle" });
   const [toast, setToast] = useState<string | null>(null);
+  const [promptHidden, setPromptHidden] = useState(loadPromptHidden);
+  const [discovery, setDiscovery] = useState<Discovery | null>(null);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 6000);
@@ -195,7 +207,11 @@ export default function App() {
         setTimeout(() => reject(Object.assign(new Error("Sync timed out"), { code: "deadline-exceeded" })), SYNC_TIMEOUT_MS),
       );
       // A reply that arrives after the time limit is simply dropped. The next sync catches up.
-      const result = await Promise.race([syncItems(user.uid, latest.current.items, latest.current.tombstones), timeout]);
+      const itemsBefore = latest.current.items;
+      const result = await Promise.race([syncItems(user.uid, itemsBefore, latest.current.tombstones), timeout]);
+      // Tell the person when the account had items this device did not (for example ones deleted while offline).
+      const found = describeDiscovery(findNewItems(itemsBefore, result.items));
+      if (found) setDiscovery(found);
       // Only touch state when something really changed, so syncing settles instead of looping.
       if (result.localChanged) setItems(result.items);
       if (JSON.stringify(result.tombstones) !== JSON.stringify(latest.current.tombstones)) {
@@ -231,10 +247,26 @@ export default function App() {
   const patch = (id: string, change: Partial<Item>) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...change, updatedAt: Date.now() } : i)));
 
+  /**
+   * A delete only reaches the account's backup while sync is running and the device is online. Made offline
+   * (or signed out, or with sync off), it removes the item from this device only: if the item is in the
+   * backup it comes back at the next sync, for example when the person logs back in.
+   */
   function deleteItem(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id));
-    setTombstones((prev) => ({ ...prev, [id]: Date.now() }));
+    if (deleteReachesBackup(syncOn, navigator.onLine)) {
+      setTombstones((prev) => ({ ...prev, [id]: Date.now() }));
+    }
     void deleteReceiptImage(id);
+  }
+
+  /** Asks first, in words that match what will really happen, then deletes. */
+  function requestDelete(id: string) {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    if (!window.confirm(deleteQuestion(item.name, deleteReachesBackup(syncOn, navigator.onLine)))) return;
+    deleteItem(id);
+    closeEdit();
   }
 
   /** Clears one role of an item (expense, warranty or subscription). Deletes it if no role is left. */
@@ -243,7 +275,10 @@ export default function App() {
     if (!item) return;
     if (isOrphan({ ...item, ...change })) {
       const ok = window.confirm(
-        `"${item.name}" is not an expense, warranty or subscription any more, so it would have nowhere to show. Delete it?`,
+        `"${item.name}" is not an expense, warranty or subscription any more, so it would have nowhere to show. Delete it?` +
+          (deleteReachesBackup(syncOn, navigator.onLine)
+            ? ""
+            : "\n\nIf it is backed up in your account, it comes back the next time you sync."),
       );
       if (ok) deleteItem(id);
       return;
@@ -280,11 +315,6 @@ export default function App() {
     closeEdit();
   }
 
-  function removeEdited(id: string) {
-    deleteItem(id);
-    closeEdit();
-  }
-
   function toggleNotify(id: string) {
     const turningOn = !items.find((i) => i.id === id)?.notify;
     if (turningOn) askForNotifications();
@@ -317,6 +347,12 @@ export default function App() {
   function setSyncFor(on: boolean) {
     if (!user) return;
     setSettings((s) => ({ ...s, syncUid: on ? user.uid : null }));
+    if (!on) hidePrompt(false); // switching sync off brings the reminder back
+  }
+
+  function hidePrompt(hidden: boolean) {
+    setPromptHidden(hidden);
+    savePromptHidden(hidden);
   }
 
   /** The button in the bottom-right corner: it explains what sync does and turns it on only if the person agrees. */
@@ -371,8 +407,8 @@ export default function App() {
 
   const editingItem = editing ? items.find((i) => i.id === editing.id) : undefined;
   const title = page === "edit" ? "Edit Item" : NAV.find((n) => n.page === page)!.label;
-  // The opt-in button shows whenever accounts exist and this person is not syncing (it is redundant on the Sync page).
-  const showSyncPrompt = isFirebaseConfigured && page !== "sync" && !syncOn;
+  // The opt-in button shows on every page while accounts exist and this person is not syncing, until they hide it.
+  const showSyncPrompt = isFirebaseConfigured && !syncOn && !promptHidden;
 
   return (
     <div className={showSyncPrompt ? "phone has-fab" : "phone"}>
@@ -449,7 +485,7 @@ export default function App() {
               defaultCurrency={settings.defaultCurrency}
               rates={rates}
               onSave={saveEdit}
-              onDelete={removeEdited}
+              onDelete={requestDelete}
             />
           ) : (
             <div className="page">
@@ -493,13 +529,14 @@ export default function App() {
       </nav>
 
       {showSyncPrompt && (
-        <SyncPrompt mode={user ? "enable" : "signin"} onClick={user ? askToTurnOnSync : goToWelcome} />
+        <SyncPrompt mode={user ? "enable" : "signin"} onClick={user ? askToTurnOnSync : goToWelcome} onHide={() => hidePrompt(true)} />
       )}
       {toast && (
         <p className="toast" role="status">
           {toast}
         </p>
       )}
+      {discovery && <DiscoveryDialog discovery={discovery} onClose={() => setDiscovery(null)} />}
     </div>
   );
 }

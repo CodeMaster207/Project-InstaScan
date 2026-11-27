@@ -12,6 +12,7 @@ const SETTINGS_KEY = "instapay.settings";
 const DELETED_KEY = "instapay.deleted";
 const RATES_KEY = "instapay.rates";
 const OWNER_KEY = "instapay.owner";
+const PROMPT_HIDDEN_KEY = "instapay.syncPromptHidden";
 
 export type Session = "offline" | "account";
 
@@ -67,6 +68,10 @@ export function loadOwner(): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 export const saveOwner = (uid: string): void => write(OWNER_KEY, uid);
+
+/** Whether the person hid the "you can sync" button. Only a convenience, so it is safe to lose. */
+export const loadPromptHidden = (): boolean => read<unknown>(PROMPT_HIDDEN_KEY, false) === true;
+export const savePromptHidden = (hidden: boolean): void => write(PROMPT_HIDDEN_KEY, hidden);
 
 export function loadTombstones(): Tombstones {
   const raw = read<unknown>(DELETED_KEY, {});

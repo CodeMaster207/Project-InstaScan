@@ -21,6 +21,7 @@ import {
   type Converter,
   type RateTable,
 } from "./rates";
+import { deleteQuestion, deleteReachesBackup, describeDiscovery, findNewItems } from "./policy";
 import { isSyncOn, resolveSettings } from "./settings";
 import { rejectReason } from "./validate";
 
@@ -482,5 +483,43 @@ describe('sync is opt-in, per account', () => {
     assert.equal(resolveSettings({ defaultCurrency: 'toolongcode' }).defaultCurrency, 'TOOL');
     assert.equal(resolveSettings({}).autoConvert, true);
     assert.equal(resolveSettings({ autoConvert: false }).autoConvert, false);
+  });
+});
+
+describe('deleting while offline, and discovering restored items', () => {
+  const item = (id: string, name: string, photo = false) => makeItem({ id, name, hasReceiptImage: photo }, NOW);
+
+  it('a delete reaches the backup only while sync is running and the device is online', () => {
+    assert.equal(deleteReachesBackup(true, true), true);
+    assert.equal(deleteReachesBackup(true, false), false); // offline
+    assert.equal(deleteReachesBackup(false, true), false); // signed out, or sync off
+    assert.equal(deleteReachesBackup(false, false), false);
+  });
+
+  it('the delete question says what will really happen', () => {
+    const everywhere = deleteQuestion('Kettle', true);
+    assert.ok(everywhere.includes('everywhere') && everywhere.includes("removed from your account's backup"));
+    const local = deleteQuestion('Kettle', false);
+    assert.ok(local.includes('from this device') && local.includes('comes back the next time you sync'));
+    assert.ok(!local.includes('everywhere'));
+  });
+
+  it('finds only the items a sync brought to this device', () => {
+    const before = [item('a', 'Kettle')];
+    const after = [item('a', 'Kettle'), item('b', 'Toaster'), item('c', 'Fan')];
+    assert.deepEqual(findNewItems(before, after).map((i) => i.name), ['Toaster', 'Fan']);
+    assert.deepEqual(findNewItems(after, after), []); // nothing new means no pop-up
+    assert.deepEqual(findNewItems([], []), []);
+  });
+
+  it('describes a discovery for the pop-up, and says nothing when nothing was found', () => {
+    assert.equal(describeDiscovery([]), null);
+    const one = describeDiscovery([item('a', 'Kettle')]);
+    assert.deepEqual(one, { names: ['Kettle'], count: 1, mentionsPhotos: false });
+    const many = describeDiscovery(Array.from({ length: 9 }, (_, n) => item(String(n), 'Item ' + n, n === 4)));
+    assert.equal(many?.count, 9);
+    assert.equal(many?.names.length, 6); // only the first few are listed
+    assert.equal(many?.names[0], 'Item 0');
+    assert.equal(many?.mentionsPhotos, true); // one of them had a receipt photo, which stays on the other device
   });
 });

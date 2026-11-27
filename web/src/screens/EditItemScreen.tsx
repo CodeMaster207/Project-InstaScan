@@ -84,11 +84,7 @@ export function EditItemScreen({ item, defaultCurrency, rates, onSave, onDelete 
               <button
                 type="button"
                 className="btn btn-danger"
-                onClick={() => {
-                  if (window.confirm(`Delete "${item.name}" everywhere (expenses, warranty and subscriptions)?`)) {
-                    onDelete(item.id);
-                  }
-                }}
+                onClick={() => onDelete(item.id)}
               >
                 Delete
               </button>

@@ -114,7 +114,8 @@ export function SyncSettingsScreen({
           <p className="muted">
             Off until you turn it on. When on, the details of your items (name, amount, dates, category, notes) are
             kept in your account so you can use them on another device. <strong>Receipt photos are never uploaded.</strong>{" "}
-            You can switch it off at any time.
+            You can switch it off at any time. An item you delete while offline is only removed from this device, and
+            comes back at your next sync.
             {!user && " Sign in or register to turn this on."}
           </p>
           {user && syncOn && (
